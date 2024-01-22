@@ -1,0 +1,16 @@
+.*
+docs/
+srcs/*.anno.json
+srcs/*.dtb
+srcs/*.dts
+srcs/*.sv
+srcs/bootrom/*.bin
+srcs/bootrom/*.img
+srcs/project
+srcs/target
+test/*.log
+test/*.sv
+test/*.vcd
+test/obj_dir
+toolchain
+

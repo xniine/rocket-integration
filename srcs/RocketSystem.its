@@ -1,0 +1,69 @@
+/dts-v1/;
+
+/ {
+    binman: binman {
+        multiple-images;
+    };
+};
+
+&binman {
+    itb {
+        filename = "u-boot.itb";
+
+        fit {
+            description = "Configuration to load OpenSBI before U-Boot";
+            #address-cells = <2>;
+            fit,fdt-list = "of-list";
+
+            images {
+                uboot {
+                    description = "U-Boot";
+                    type = "standalone";
+                    os = "U-Boot";
+                    arch = "riscv";
+                    compression = "none";
+                    load = <0x0 0x81200000>;
+                    entry = <0x0 0x81200000>;
+                    uboot_blob: blob-ext {
+                        filename = "u-boot-nodtb.bin";
+                    };
+                };
+
+                opensbi {
+                    description = "OpenSBI fw_dynamic Firmware";
+                    type = "firmware";
+                    os = "opensbi";
+                    arch = "riscv";
+                    compression = "none";
+                    load = <0x0 0x80000000>;
+                    entry = <0x0 0x80000000>;
+                    opensbi_blob: opensbi {
+                        filename = "fw_dynamic.bin";
+                        missing-msg = "opensbi";
+                    };
+                };
+
+                fdt-1 {
+                    description = "Flattned Device Tree";
+                    type = "flat_dt";
+                    compression = "none";
+                    load = <0x0 0x85100000>;
+                    fdt_blob: blob-ext {
+                        filename = "fdt-1.dtb";
+                    };
+                };
+            };
+
+            configurations {
+                default = "conf-1";
+                conf-1 {
+                    description = "Boot with OpenSBI and U-Boot";
+                    loadables = "uboot";
+                    firmware = "opensbi";
+                    fdt = "fdt-1";
+                };
+            };
+        };
+    };
+};
+

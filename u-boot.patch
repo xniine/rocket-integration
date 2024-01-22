@@ -1,0 +1,40 @@
+diff --git a/board/emulation/qemu-riscv/qemu-riscv.c b/board/emulation/qemu-riscv/qemu-riscv.c
+index 181abbbf97..0fdd6c0d8d 100644
+--- a/board/emulation/qemu-riscv/qemu-riscv.c
++++ b/board/emulation/qemu-riscv/qemu-riscv.c
+@@ -53,7 +53,7 @@ int board_late_init(void)
+ u32 spl_boot_device(void)
+ {
+ 	/* RISC-V QEMU only supports RAM as SPL boot device */
+-	return BOOT_DEVICE_RAM;
++	return BOOT_DEVICE_SPI; //BOOT_DEVICE_RAM;
+ }
+ #endif
+ 
+diff --git a/drivers/core/ofnode.c b/drivers/core/ofnode.c
+index 8df16e56af..5ec6b0b090 100644
+--- a/drivers/core/ofnode.c
++++ b/drivers/core/ofnode.c
+@@ -412,8 +412,8 @@ const void *ofnode_read_prop(ofnode node, const char *propname, int *sizep)
+ 	const char *val = NULL;
+ 	int len;
+ 
+-	assert(ofnode_valid(node));
+ 	debug("%s: %s: ", __func__, propname);
++	assert(ofnode_valid(node));
+ 
+ 	if (ofnode_is_np(node)) {
+ 		struct property *prop = of_find_property(
+diff --git a/drivers/mtd/spi/spi-nor-tiny.c b/drivers/mtd/spi/spi-nor-tiny.c
+index 7aa24e129f..9075c865be 100644
+--- a/drivers/mtd/spi/spi-nor-tiny.c
++++ b/drivers/mtd/spi/spi-nor-tiny.c
+@@ -116,6 +116,7 @@ static ssize_t spi_nor_read_data(struct spi_nor *nor, loff_t from, size_t len,
+ 		remaining -= op.data.nbytes;
+ 		op.data.buf.in += op.data.nbytes;
+ 	}
++	log_err("- %02x%02x%02x%02x\n", buf[0], buf[1], buf[2], buf[3]);
+ 
+ 	return len;
+ }
+
