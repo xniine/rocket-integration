@@ -1,0 +1,80 @@
+diff --git a/src/main/scala/devices/spi/SPIPhysical.scala b/src/main/scala/devices/spi/SPIPhysical.scala
+index 389879f..943a84e 100644
+--- a/src/main/scala/devices/spi/SPIPhysical.scala
++++ b/src/main/scala/devices/spi/SPIPhysical.scala
+@@ -75,17 +75,21 @@ class SPIPhysical(c: SPIParamsBase) extends Module {
+     }
+     .otherwise{
+       del_cntr := 1.U  
+-      }
++    }
+   }.otherwise {
+    when (del_cntr =/= 0.U){
+       del_cntr := del_cntr - 1.U
+     }
+-   }
++  }
+ 
+-  when (del_cntr === 1.U) {
+-    sample_d := true.B
++  when (totalCoarseDel < 1.U) {
++    sample_d := beat && sample
+   }.otherwise {
+-    sample_d := false.B
++    when (del_cntr === 1.U) {
++      sample_d := true.B
++    }.otherwise {
++      sample_d := false.B
++    }
+   }
+   //Making a delay counter for 'last'
+   val last_d = RegInit(false.B) 
+@@ -96,7 +100,7 @@ class SPIPhysical(c: SPIParamsBase) extends Module {
+     }
+     .otherwise{
+       del_cntr_last := 1.U  
+-      }
++    }
+   }.otherwise {
+     when (del_cntr_last =/= 0.U){
+       del_cntr_last := del_cntr_last - 1.U
+@@ -139,7 +143,7 @@ class SPIPhysical(c: SPIParamsBase) extends Module {
+ 
+   val buffer = Reg(UInt(c.frameBits.W))
+   val buffer_in = convert(io.op.bits.data, io.ctrl.fmt)
+-  val shift = Mux ((totalCoarseDel > 0.U), setup_d || (sample_d && stop), sample_d)
++  val shift = Mux ((totalCoarseDel > 0.U), setup_d || (sample_d && stop), setup_d)
+   buffer := Mux1H(proto, samples.zipWithIndex.map { case (data, i) =>
+     val n = 1 << i
+     val m = c.frameBits -1
+diff --git a/src/main/scala/util/Timer.scala b/src/main/scala/util/Timer.scala
+index 6f7ddf6..a9e4667 100644
+--- a/src/main/scala/util/Timer.scala
++++ b/src/main/scala/util/Timer.scala
+@@ -15,14 +15,14 @@ class GenericTimerCfgReg(
+   val gang = Vec(maxcmp, Bool())
+   val extra = Vec(maxcmp, Bool())
+   val center = Vec(maxcmp, Bool())
+-  val reserved0 = UInt(2.W)
++  //val reserved0 = UInt(2.W)
+   val running = Bool()
+   val countAlways = Bool()
+-  val reserved1 = UInt(1.W)
++  //val reserved1 = UInt(1.W)
+   val deglitch = Bool()
+   val zerocmp = Bool()
+   val sticky = Bool()
+-  val reserved2 = UInt((8 - scaleWidth).W)
++  //val reserved2 = UInt((8 - scaleWidth).W)
+   val scale = UInt(scaleWidth.W)
+ 
+ }
+@@ -179,7 +179,7 @@ trait GenericTimer {
+   protected def gang: Vec[Bool] = VecInit.fill(ncmp){false.B}
+   protected val scaleWidth = 4
+   protected val regWidth = 32
+-  val maxcmp = 4
++  val maxcmp: Int = 4.min(ncmp)
+   require(ncmp <= maxcmp)
+   require(ncmp > 0)
+ 

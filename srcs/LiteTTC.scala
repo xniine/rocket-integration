@@ -98,11 +98,13 @@ class LiteTimerIn extends Bundle {
   val match_3          = UInt(LiteTTCDevice.width)
   val interrupt_enable = UInt(6.W)
   val interrupt_rst    = Bool()
+  val event_control    = UInt(3.W)
 }
 
 class LiteTimerOut extends Bundle {
   val count_value      = UInt(LiteTTCDevice.width)
   val interrupt_status = UInt(6.W)
+  val event_value      = UInt(LiteTTCDevice.width)
 }
 
 class LiteTTC(busWidthBytes: Int, c: LiteTTCParams)(implicit p: Parameters) 
@@ -133,13 +135,14 @@ class LiteTTC(busWidthBytes: Int, c: LiteTTCParams)(implicit p: Parameters)
     withReset(reset) {
       inputs.map(in => {
           in.clock_control    :=  0.U
-          in.count_control    := 10.U
+          in.count_control    := 10.U // Reset Counter
           in.interval         :=  0.U
           in.match_1          :=  0.U
           in.match_2          :=  0.U
           in.match_3          :=  0.U
           in.interrupt_enable :=  0.U
           in.interrupt_rst    :=  0.B
+          in.event_control    :=  1.U // Event Disable
       })
     }
     
@@ -166,6 +169,7 @@ class LiteTTC(busWidthBytes: Int, c: LiteTTCParams)(implicit p: Parameters)
       0x48 -> Seq(RegField  (w, inputs (0).match_3      )),
       0x4C -> Seq(RegField  (w, inputs (1).match_3      )),
       0x50 -> Seq(RegField  (w, inputs (2).match_3      )),
+
       0x54 -> Seq(RegField  (6, RegReadFn(ready => {
         inputs(0).interrupt_rst := 1.B; (1.B, outputs(0).interrupt_status)
       }), ())),
@@ -175,9 +179,16 @@ class LiteTTC(busWidthBytes: Int, c: LiteTTCParams)(implicit p: Parameters)
       0x5C -> Seq(RegField  (6, RegReadFn(ready => {
         inputs(2).interrupt_rst := 1.B; (1.B, outputs(2).interrupt_status)
       }), ())),
-      0x60 -> Seq(RegField  (6, inputs(0).interrupt_enable)),
-      0x64 -> Seq(RegField  (6, inputs(1).interrupt_enable)),
-      0x68 -> Seq(RegField  (6, inputs(2).interrupt_enable))
+
+      0x60 -> Seq(RegField  (6, inputs (0).interrupt_enable)),
+      0x64 -> Seq(RegField  (6, inputs (1).interrupt_enable)),
+      0x68 -> Seq(RegField  (6, inputs (2).interrupt_enable)),
+      0x6C -> Seq(RegField  (3, inputs (0).event_control)),
+      0x70 -> Seq(RegField  (3, inputs (1).event_control)),
+      0x74 -> Seq(RegField  (3, inputs (2).event_control)),
+      0x78 -> Seq(RegField.r(w, outputs(0).event_value)),
+      0x7C -> Seq(RegField.r(w, outputs(1).event_value)),
+      0x80 -> Seq(RegField.r(w, outputs(2).event_value))
     )
  
     counters.zipWithIndex.foreach { case (tc, i) =>
@@ -193,9 +204,11 @@ class LiteTTC(busWidthBytes: Int, c: LiteTTCParams)(implicit p: Parameters)
       tc.io.control.match_3          := inputs(i).match_3         ;
       tc.io.control.interrupt_enable := inputs(i).interrupt_enable;
       tc.io.control.interrupt_rst    := inputs(i).interrupt_rst   ;
+      tc.io.control.event_control    := inputs(i).event_control   ;
 
       outputs(i).interrupt_status    := tc.io.control.interrupt_status;
       outputs(i).count_value         := tc.io.control.count_value;
+      outputs(i).event_value         := tc.io.control.event_value;
     }
     regmap(mapping:_*)
   }
@@ -203,17 +216,19 @@ class LiteTTC(busWidthBytes: Int, c: LiteTTCParams)(implicit p: Parameters)
 
 ////////////////////////////////////////////////////////////////////////////////
 class LiteTimerCtl extends Bundle {
-  val clock_control    = Input (UInt( 7.W)) // CE|CS|PRESCALE[4-1]|EN
-  val count_control    = Input (UInt( 7.W)) // PL|OW|CR|ME|DC|IM|OD
+  val clock_control    = Input (UInt(7.W)) // CE|CS|PRESCALE[4-1]|EN
+  val count_control    = Input (UInt(7.W)) // PL|OW|CR|ME|DC|IM|OD
   val count_value      = Output(UInt(LiteTTCDevice.width))
   val interval         = Input (UInt(LiteTTCDevice.width))
   val match_1          = Input (UInt(LiteTTCDevice.width))
   val match_2          = Input (UInt(LiteTTCDevice.width))
   val match_3          = Input (UInt(LiteTTCDevice.width))
-  val interrupt_status = Output(UInt( 6.W))
-  val interrupt_enable = Input (UInt( 6.W))
+  val interrupt_status = Output(UInt(6.W))
+  val interrupt_enable = Input (UInt(6.W))
   val interrupt        = Output(Bool())
   val interrupt_rst    = Input (Bool())
+  val event_control    = Input (UInt(3.W))
+  val event_value      = Output(UInt(LiteTTCDevice.width))
 }
 
 class LiteTimer extends Module {
@@ -225,15 +240,17 @@ class LiteTimer extends Module {
     val n_waveform_oe = Output(Bool())
   })
 
-  val clk_ctl = RegInit(0.U( 7.W))
-  val cnt_ctl = RegInit(0.U( 7.W))
+  val clk_ctl = RegInit(0.U(7.W))
+  val cnt_ctl = RegInit(0.U(7.W))
   val inv_num = RegInit(0.U(LiteTTCDevice.width))
   val match_1 = RegInit(0.U(LiteTTCDevice.width))
   val match_2 = RegInit(0.U(LiteTTCDevice.width))
   val match_3 = RegInit(0.U(LiteTTCDevice.width))
   val cnt_val = RegInit(0.U(LiteTTCDevice.width))
-  val inp_isr = RegInit(0.U( 6.W))
+  val inp_isr = RegInit(0.U(6.W))
   val rst_ack = RegInit(0.B)
+  val evt_ctl = RegInit(0.U(3.W))
+  val evt_val = RegInit(0.U(LiteTTCDevice.width))
 
   //----------------------------------------------------------------------------
   val di_hold = RegInit(0.U(4.W))
@@ -245,6 +262,7 @@ class LiteTimer extends Module {
     match_1 := io.control.match_1
     match_2 := io.control.match_2
     match_3 := io.control.match_3
+    evt_ctl := io.control.event_control
   }
 
   // CS (Clock Source)
@@ -262,6 +280,8 @@ class LiteTimer extends Module {
     val match_2_q2 = RegNext(match_2_q1)
     val match_3_q1 = RegNext(match_3)
     val match_3_q2 = RegNext(match_3_q1)
+    val evt_ctl_q1 = RegNext(evt_ctl)
+    val evt_ctl_q2 = RegNext(evt_ctl_q1)
 
     //--------------------------------------------------------------------------
     val div_num = WireDefault(1.U << clk_ctl_q2(4,1)) // Prescale
@@ -316,9 +336,25 @@ class LiteTimer extends Module {
     io.n_waveform_oe := waveform_oe
 
     //----------------------------------------------------------------------------
+    val evt_act = RegInit(0.B)
+    val evt_cnt = RegInit(0.U(LiteTTCDevice.width))
+    when (evt_ctl_q2(2)) {
+      evt_act := 1.B
+    }.elsewhen (!evt_ctl_q2(0)) {
+      evt_act := evt_act && !clk_ovf
+    }
+
+    when (evt_ctl_q2(0)) {
+      evt_cnt := 0.U
+    }.elsewhen (evt_act) {
+      evt_cnt := evt_cnt + (evt_ctl(1) ^ io.ext_clock.asBool)
+    }
+
+    //----------------------------------------------------------------------------
     val do_hold = RegInit(0.U( 4.W))
     do_hold := Mux(do_hold =/= 0.U, do_hold - 1.U, 4.U(4.W))
     when (!do_hold) {
+      evt_val := evt_cnt
       cnt_val := clk_cnt
       rst_ack := cnt_ctl_q2(4)
       inp_isr.bitSet(0.U, clk_ovf || clk_itv || clk_mat.orR)
@@ -330,6 +366,8 @@ class LiteTimer extends Module {
   }
 
   //----------------------------------------------------------------------------
+  val evt_val_q1 = RegNext(evt_val)
+  val evt_val_q2 = RegNext(evt_val_q1)
   val cnt_val_q1 = RegNext(cnt_val)
   val cnt_val_q2 = RegNext(cnt_val_q1)
   val inp_isr_q1 = RegNext(inp_isr)
@@ -338,6 +376,7 @@ class LiteTimer extends Module {
   val rst_ack_q2 = RegNext(rst_ack_q1)
   val isr_val    = RegInit(0.U(6.W))
 
+  io.control.event_value := evt_val_q2
   io.control.count_value := cnt_val_q2
   io.control.interrupt_status := isr_val
   io.control.interrupt := isr_val(0)
