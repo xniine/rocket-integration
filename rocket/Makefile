@@ -16,12 +16,12 @@ config:
 	sbt run
 
 opensbi: config
-	ls *.dtb | grep -m1 -v build.dtb | xargs -i ln -sf ../srcs/{} ../opensbi/fdt-1.dtb
+	ls *.dtb | grep -m1 -v build.dtb | xargs -i ln -sf ../$(notdir $(PWD))/{} ../opensbi/fdt-1.dtb
 	cd ../opensbi && make O=build CROSS_COMPILE=riscv64-unknown-linux-gnu- PLATFORM=generic FW_FDT_PATH=./fdt-1.dtb
 
 u-boot: config
-	ls *.dtb | grep -m1 -v build.dtb | xargs -i ln -sf ../srcs/{} ../u-boot/fdt-1.dtb
-	ln -sf ../srcs/build.dtb ../u-boot/
+	ls *.dtb | grep -m1 -v build.dtb | xargs -i ln -sf ../$(notdir $(PWD))/{} ../u-boot/fdt-1.dtb
+	ln -sf ../$(notdir $(PWD))/build.dtb ../u-boot/
 	ln -sf ../opensbi/build/platform/generic/firmware/fw_dynamic.bin ../u-boot/
 	cd ../u-boot && make CROSS_COMPILE=riscv64-unknown-linux-gnu- EXTRA_CFLAGS="-march=rv64gc -mtune=rocket -DLOG_DEBUG -fPIC" EXT_DTB=./build.dtb
 
@@ -35,3 +35,4 @@ vl-sim:
 
 vl-run:
 	cd ../test && ./sim-run.sh
+

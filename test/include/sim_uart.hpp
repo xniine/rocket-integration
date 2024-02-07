@@ -59,17 +59,19 @@ public:
             *this->rxd = 1;
             if (_kbhit()) { 
                 rxd_val = getchar();
+                if (rxd_val != 0xA && rxd_val != 0xD) {
+                    printf("\e[s\e[125G[%c]\e[u", rxd_val);
+                }
                 rxd_cnt = clk_div;
                 rxd_idx = 0;
             }
         } else 
         if (rxd_act && !rxd_cnt) {
-            rxd_cnt = clk_div;
-            rxd_idx = rxd_idx + 1;
             switch (rxd_idx) {
                 case 0: {
                     *this->rxd = 0;
                     rxd_pry = false;
+                    break;
                 }
                 case 1:
                 case 2:
@@ -77,20 +79,24 @@ public:
                 case 4:
                 case 5:
                 case 6:
-                case 7:
-                case 8: {
+                case 7: {
                     *this->rxd = rxd_val & 0x1;
                     rxd_pry = rxd_pry ^ (rxd_val & 0x1);
                     rxd_val = rxd_val >> 1;
+                    break;
                 }
-                case 9: {
+                case 8: {
                     *this->rxd = rxd_pry;
+                    break;
                 }
                 default: {
                     *this->rxd = 1;
                     rxd_act = false;
+                    break;
                 }
             }
+            rxd_cnt = clk_div;
+            rxd_idx = rxd_idx + 1;
         }
         rxd_out = *this->rxd;
     }
@@ -101,7 +107,7 @@ public:
                 // 2) Clock Counting
                 txd_cnt = txd_cnt - 1;
             } else
-            if (txd_idx < 8) {
+            if (txd_idx < 7) {
                 // 3) Pick Bit 0-7, Save to "txd_val"
                 txd_val = txd_val | (*this->txd << txd_idx);
                 txd_cnt = clk_div;

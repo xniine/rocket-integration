@@ -18,6 +18,7 @@ import java.io._
 
 ////////////////////////////////////////////////////////////////////////////////
 class RocketSystem(implicit p: Parameters) extends RocketSubsystem
+  with HasPeripheryLiteGEM
   with HasPeripheryLiteTTC
   with HasPeripherySPIFlash
   with HasPeripheryUART
@@ -59,6 +60,7 @@ class RocketSystem(implicit p: Parameters) extends RocketSubsystem
   }
 
   override lazy val module = new RocketSubsystemModuleImp(this)
+    with HasPeripheryLiteGEMImp
     with HasPeripheryLiteTTCImp
     with HasPeripherySPIFlashModuleImp
     with HasPeripheryUARTModuleImp
@@ -69,8 +71,9 @@ class RocketSystem(implicit p: Parameters) extends RocketSubsystem
 
 ////////////////////////////////////////////////////////////////////////////////
 class WithRocketConfig extends Config((site, here, up) => {
-  case PeripheryLiteTTCKey  => Seq(LiteTTCParams (0x10014000))
-  case PeripherySPIFlashKey => Seq(SPIFlashParams(0x10012000, 0x20000000, defaultSampleDel=0))
+  case PeripheryLiteGEMKey  => Seq(LiteGEMParams (0x10014000))
+  case PeripheryLiteTTCKey  => Seq(LiteTTCParams (0x10012000))
+  case PeripherySPIFlashKey => Seq(SPIFlashParams(0x1001F000, 0x20000000, defaultSampleDel=0))
   case PeripheryUARTKey     => Seq(UARTParams    (0x10010000))
 })
 
@@ -78,6 +81,7 @@ object RocketSystem {
   var modules = Seq[BaseSubsystem]()
   def apply() = {
     val config = new Config(
+      new WithoutTLMonitors ++
       new WithPeripheryBusFrequency(100) ++
       new WithBootROMFile("bootrom/bootrom-spl.img") ++
       new WithDTS("freechips,rocketchip-riscv64", Nil) ++
@@ -105,6 +109,7 @@ object RocketSystem {
         "--verilog", "-o", s"${moduleName}.sv" //"--split-verilog", "-o", "out",
       )
     )
+    //--------------------------------------------------------------------------
     ElaborationArtefacts.files.foreach {
       case ("dts", contents) => os.write.over(os.pwd / s"${moduleName}.dts", contents())
       case _ => ()

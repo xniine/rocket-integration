@@ -1,5 +1,6 @@
 
 import chisel3._
+import chisel3.util._
 import org.chipsalliance.cde.config.{Field, Parameters}
 import freechips.rocketchip.subsystem.BaseSubsystem
 import freechips.rocketchip.devices.tilelink._
@@ -82,13 +83,6 @@ object LiteTTCDevice {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-class LiteTTCIO(c: LiteTTCParams) extends Bundle {
-  val interrupts    = Input (UInt(3.W))
-  val waveform      = Input (UInt(3.W))
-  val n_waveform_oe = Output(UInt(3.W))
-  val ext_clock     = Input (Vec(3, Clock()))
-}
-
 class LiteTimerIn extends Bundle {
   val clock_control    = UInt(7.W) // CE|CS|PRESCALE[4-1]|EN
   val count_control    = UInt(7.W) // PL|OW|CR|ME|DC|IM|OD
@@ -99,12 +93,20 @@ class LiteTimerIn extends Bundle {
   val interrupt_enable = UInt(6.W)
   val interrupt_rst    = Bool()
   val event_control    = UInt(3.W)
+  val reset_ack        = Bool()
 }
 
 class LiteTimerOut extends Bundle {
   val count_value      = UInt(LiteTTCDevice.width)
   val interrupt_status = UInt(6.W)
   val event_value      = UInt(LiteTTCDevice.width)
+}
+
+class LiteTTCIO extends Bundle {
+  val interrupts    = Input (UInt(3.W))
+  val waveform      = Output(UInt(3.W))
+  val n_waveform_oe = Output(UInt(3.W))
+  val ext_clock     = Input (Vec(3, Clock()))
 }
 
 class LiteTTC(busWidthBytes: Int, c: LiteTTCParams)(implicit p: Parameters) 
@@ -114,130 +116,103 @@ class LiteTTC(busWidthBytes: Int, c: LiteTTCParams)(implicit p: Parameters)
       compat = Seq("cdns,ttc"),
       base = c.address,
       beatBytes = busWidthBytes),
-    new LiteTTCIO(c))
+    new LiteTTCIO)
   with HasInterruptSources
   with HasTLControlRegMap {
 
   def nInterrupts = 3
-
   lazy val module = new LazyModuleImp(this) {
     val counter0 = Module(new LiteTimer())
     val counter1 = Module(new LiteTimer())
     val counter2 = Module(new LiteTimer())
     val counters = Vector(counter0, counter1, counter2)
 
-    counters(0).io.ext_clock := port.ext_clock(0)
-    counters(1).io.ext_clock := port.ext_clock(1)
-    counters(2).io.ext_clock := port.ext_clock(2)
-
-    val outputs = Reg(Vec(3, new LiteTimerOut))
-    val inputs  = Reg(Vec(3, new LiteTimerIn ))
-    withReset(reset) {
-      inputs.map(in => {
-          in.clock_control    :=  0.U
-          in.count_control    := 10.U // Reset Counter
-          in.interval         :=  0.U
-          in.match_1          :=  0.U
-          in.match_2          :=  0.U
-          in.match_3          :=  0.U
-          in.interrupt_enable :=  0.U
-          in.interrupt_rst    :=  0.B
-          in.event_control    :=  1.U // Event Disable
-      })
-    }
+    val output = Reg(Vec(3, new LiteTimerOut))
+    val inputs = Reg(Vec(3, new LiteTimerIn))
     
     val w = LiteTTCDevice.width.get
     val mapping = Seq(
-      0x00 -> Seq(RegField  (7, inputs (0).clock_control)),
-      0x04 -> Seq(RegField  (7, inputs (1).clock_control)),
-      0x08 -> Seq(RegField  (7, inputs (2).clock_control)),
-      0x0C -> Seq(RegField  (7, inputs (0).count_control)),
-      0x10 -> Seq(RegField  (7, inputs (1).count_control)),
-      0x14 -> Seq(RegField  (7, inputs (2).count_control)),
-      0x18 -> Seq(RegField.r(w, outputs(0).count_value  )),
-      0x1C -> Seq(RegField.r(w, outputs(1).count_value  )),
-      0x20 -> Seq(RegField.r(w, outputs(2).count_value  )),
-      0x24 -> Seq(RegField  (w, inputs (0).interval     )),
-      0x28 -> Seq(RegField  (w, inputs (1).interval     )),
-      0x2C -> Seq(RegField  (w, inputs (2).interval     )),
-      0x30 -> Seq(RegField  (w, inputs (0).match_1      )),
-      0x34 -> Seq(RegField  (w, inputs (1).match_1      )),
-      0x38 -> Seq(RegField  (w, inputs (2).match_1      )),
-      0x3C -> Seq(RegField  (w, inputs (0).match_2      )),
-      0x40 -> Seq(RegField  (w, inputs (1).match_2      )),
-      0x44 -> Seq(RegField  (w, inputs (2).match_2      )),
-      0x48 -> Seq(RegField  (w, inputs (0).match_3      )),
-      0x4C -> Seq(RegField  (w, inputs (1).match_3      )),
-      0x50 -> Seq(RegField  (w, inputs (2).match_3      )),
+      0x00 -> Seq(RegField  (7, inputs(0).clock_control)),
+      0x04 -> Seq(RegField  (7, inputs(1).clock_control)),
+      0x08 -> Seq(RegField  (7, inputs(2).clock_control)),
+      0x0C -> Seq(RegField  (7, inputs(0).count_control)),
+      0x10 -> Seq(RegField  (7, inputs(1).count_control)),
+      0x14 -> Seq(RegField  (7, inputs(2).count_control)),
+      0x18 -> Seq(RegField.r(w, output(0).count_value  )),
+      0x1C -> Seq(RegField.r(w, output(1).count_value  )),
+      0x20 -> Seq(RegField.r(w, output(2).count_value  )),
+      0x24 -> Seq(RegField  (w, inputs(0).interval     )),
+      0x28 -> Seq(RegField  (w, inputs(1).interval     )),
+      0x2C -> Seq(RegField  (w, inputs(2).interval     )),
+      0x30 -> Seq(RegField  (w, inputs(0).match_1      )),
+      0x34 -> Seq(RegField  (w, inputs(1).match_1      )),
+      0x38 -> Seq(RegField  (w, inputs(2).match_1      )),
+      0x3C -> Seq(RegField  (w, inputs(0).match_2      )),
+      0x40 -> Seq(RegField  (w, inputs(1).match_2      )),
+      0x44 -> Seq(RegField  (w, inputs(2).match_2      )),
+      0x48 -> Seq(RegField  (w, inputs(0).match_3      )),
+      0x4C -> Seq(RegField  (w, inputs(1).match_3      )),
+      0x50 -> Seq(RegField  (w, inputs(2).match_3      )),
 
       0x54 -> Seq(RegField  (6, RegReadFn(ready => {
-        inputs(0).interrupt_rst := 1.B; (1.B, outputs(0).interrupt_status)
+        inputs(0).interrupt_rst := 1.B; (1.B, output(0).interrupt_status)
       }), ())),
       0x58 -> Seq(RegField  (6, RegReadFn(ready => {
-        inputs(1).interrupt_rst := 1.B; (1.B, outputs(1).interrupt_status)
+        inputs(1).interrupt_rst := 1.B; (1.B, output(1).interrupt_status)
       }), ())),
       0x5C -> Seq(RegField  (6, RegReadFn(ready => {
-        inputs(2).interrupt_rst := 1.B; (1.B, outputs(2).interrupt_status)
+        inputs(2).interrupt_rst := 1.B; (1.B, output(2).interrupt_status)
       }), ())),
 
-      0x60 -> Seq(RegField  (6, inputs (0).interrupt_enable)),
-      0x64 -> Seq(RegField  (6, inputs (1).interrupt_enable)),
-      0x68 -> Seq(RegField  (6, inputs (2).interrupt_enable)),
-      0x6C -> Seq(RegField  (3, inputs (0).event_control)),
-      0x70 -> Seq(RegField  (3, inputs (1).event_control)),
-      0x74 -> Seq(RegField  (3, inputs (2).event_control)),
-      0x78 -> Seq(RegField.r(w, outputs(0).event_value)),
-      0x7C -> Seq(RegField.r(w, outputs(1).event_value)),
-      0x80 -> Seq(RegField.r(w, outputs(2).event_value))
+      0x60 -> Seq(RegField  (6, inputs(0).interrupt_enable)),
+      0x64 -> Seq(RegField  (6, inputs(1).interrupt_enable)),
+      0x68 -> Seq(RegField  (6, inputs(2).interrupt_enable)),
+      0x6C -> Seq(RegField  (3, inputs(0).event_control)),
+      0x70 -> Seq(RegField  (3, inputs(1).event_control)),
+      0x74 -> Seq(RegField  (3, inputs(2).event_control)),
+      0x78 -> Seq(RegField.r(w, output(0).event_value)),
+      0x7C -> Seq(RegField.r(w, output(1).event_value)),
+      0x80 -> Seq(RegField.r(w, output(2).event_value))
     )
+    regmap(mapping:_*)
  
     counters.zipWithIndex.foreach { case (tc, i) =>
-      when (tc.io.reset_ack) {
-        tc.io.control.count_control.bitSet(4.U, 0.B)
+      when (reset.asBool || tc.io.reset_ack) {
+        inputs(i).clock_control    :=  0.U
+        inputs(i).count_control    := 10.U // Reset Counter
+        inputs(i).interval         :=  0.U
+        inputs(i).match_1          :=  0.U
+        inputs(i).match_2          :=  0.U
+        inputs(i).match_3          :=  0.U
+        inputs(i).interrupt_enable :=  0.U
+        inputs(i).interrupt_rst    :=  0.B
+        inputs(i).event_control    :=  1.U // Event Disable
       }
-
-      tc.io.control.clock_control    := inputs(i).clock_control   ;
-      tc.io.control.count_control    := inputs(i).count_control   ;
-      tc.io.control.interval         := inputs(i).interval        ;
-      tc.io.control.match_1          := inputs(i).match_1         ;
-      tc.io.control.match_2          := inputs(i).match_2         ;
-      tc.io.control.match_3          := inputs(i).match_3         ;
-      tc.io.control.interrupt_enable := inputs(i).interrupt_enable;
-      tc.io.control.interrupt_rst    := inputs(i).interrupt_rst   ;
-      tc.io.control.event_control    := inputs(i).event_control   ;
-
-      outputs(i).interrupt_status    := tc.io.control.interrupt_status;
-      outputs(i).count_value         := tc.io.control.count_value;
-      outputs(i).event_value         := tc.io.control.event_value;
+      tc.io.ext_clock := port.ext_clock(i)
+      tc.io.ctl.in := inputs(i);
+      output(i) := tc.io.ctl.out;
     }
-    regmap(mapping:_*)
+
+    port.waveform      := Cat(counters.map(_.io.waveform))
+    port.n_waveform_oe := Cat(counters.map(_.io.n_waveform_oe))
+    port.interrupts    := Cat(counters.map(_.io.interrupt))
   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-class LiteTimerCtl extends Bundle {
-  val clock_control    = Input (UInt(7.W)) // CE|CS|PRESCALE[4-1]|EN
-  val count_control    = Input (UInt(7.W)) // PL|OW|CR|ME|DC|IM|OD
-  val count_value      = Output(UInt(LiteTTCDevice.width))
-  val interval         = Input (UInt(LiteTTCDevice.width))
-  val match_1          = Input (UInt(LiteTTCDevice.width))
-  val match_2          = Input (UInt(LiteTTCDevice.width))
-  val match_3          = Input (UInt(LiteTTCDevice.width))
-  val interrupt_status = Output(UInt(6.W))
-  val interrupt_enable = Input (UInt(6.W))
-  val interrupt        = Output(Bool())
-  val interrupt_rst    = Input (Bool())
-  val event_control    = Input (UInt(3.W))
-  val event_value      = Output(UInt(LiteTTCDevice.width))
+class LiteTimerCtlIO extends Bundle {
+  val out = Output(new LiteTimerOut)
+  val in  = Input (new LiteTimerIn)
 }
 
 class LiteTimer extends Module {
   val io = IO(new Bundle {
     val ext_clock     = Input (Clock())
-    val control       = new LiteTimerCtl()
+    val ctl           = new LiteTimerCtlIO
     val reset_ack     = Output(Bool())
     val waveform      = Output(Bool())
     val n_waveform_oe = Output(Bool())
+    val interrupt     = Output(Bool())
   })
 
   val clk_ctl = RegInit(0.U(7.W))
@@ -256,13 +231,13 @@ class LiteTimer extends Module {
   val di_hold = RegInit(0.U(4.W))
   di_hold := Mux(di_hold =/= 0.U, di_hold - 1.U, 4.U(4.W))
   when (!di_hold) {
-    clk_ctl := io.control.clock_control
-    cnt_ctl := io.control.count_control
-    inv_num := io.control.interval
-    match_1 := io.control.match_1
-    match_2 := io.control.match_2
-    match_3 := io.control.match_3
-    evt_ctl := io.control.event_control
+    clk_ctl := io.ctl.in.clock_control
+    cnt_ctl := io.ctl.in.count_control
+    inv_num := io.ctl.in.interval
+    match_1 := io.ctl.in.match_1
+    match_2 := io.ctl.in.match_2
+    match_3 := io.ctl.in.match_3
+    evt_ctl := io.ctl.in.event_control
   }
 
   // CS (Clock Source)
@@ -376,16 +351,16 @@ class LiteTimer extends Module {
   val rst_ack_q2 = RegNext(rst_ack_q1)
   val isr_val    = RegInit(0.U(6.W))
 
-  io.control.event_value := evt_val_q2
-  io.control.count_value := cnt_val_q2
-  io.control.interrupt_status := isr_val
-  io.control.interrupt := isr_val(0)
+  io.ctl.out.event_value := evt_val_q2
+  io.ctl.out.count_value := cnt_val_q2
+  io.ctl.out.interrupt_status := isr_val
+  io.interrupt := isr_val(0)
   io.reset_ack := rst_ack_q2
 
-  when (io.control.interrupt_rst) {
+  when (io.ctl.in.interrupt_rst) {
     isr_val := 0.U
   }.otherwise {
-	isr_val := (isr_val | inp_isr_q2) & io.control.interrupt_enable 
+    isr_val := (isr_val | inp_isr_q2) & io.ctl.in.interrupt_enable 
   }
 }
 
