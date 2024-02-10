@@ -195,7 +195,7 @@ class LiteGEM(busWidthBytes: Int, c: LiteGEMParams)(implicit p: Parameters)
   val dmaClockNode = ClockSinkNode(Seq(ClockSinkParameters()))
   val dmaNode = TLClientNode(Seq(TLMasterPortParameters.v1(
     Seq(TLMasterParameters.v1(
-      name = "dma_port_tl", sourceId = IdRange(0, 1)) ))))
+      name = "dma_port_tl", sourceId = IdRange(0, 4)) ))))
 
   def nInterrupts = 1
   lazy val module = new LazyModuleImp(this) {
@@ -331,10 +331,11 @@ class LiteGEMAdapter(beatBytes: Int, dmaEdge: TLEdge) extends Module {
   io.man_dv          := gem_man.io.man_dv
   io.man_do          := gem_man.io.man_do
 
+
   //----------------------------------------------------------------------------
   // TX Channel
   //----------------------------------------------------------------------------
-  val gem_txd = Module(new LiteGEMTxD(beatBytes*8))
+  val gem_txd = Module(new LiteGEMTxD(beatBytes * 8))
   gem_txd.io.gtx_clk := io.port.gtx_clk
   io.port.tx_clk     := gem_txd.io.tx_clk
   io.port.tx_en      := gem_txd.io.tx_en
@@ -344,31 +345,23 @@ class LiteGEMAdapter(beatBytes: Int, dmaEdge: TLEdge) extends Module {
   gem_txd.io.tqa     := io.ctl.in.TBQPH ## io.ctl.in.TBQP
   gem_txd.io.tqe     := io.ctl.in.NCR(3) && io.ctl.in.NCR(9) // TE && TSTART
 
-  // DMA TL-UH Channel-A
-  gem_txd.io.dma_do.ready := io.dma_a.ready
-  io.dma_a.valid          := gem_txd.io.dma_do.valid
-  io.dma_a.bits.data      := gem_txd.io.dma_do.data
-  io.dma_a.bits.address   := gem_txd.io.dma_ad
-  io.dma_a.bits.opcode    := Mux(gem_txd.io.dma_we, 0.U, 4.U)
-  io.dma_a.bits.size      := gem_txd.io.dma_sz
-  io.dma_a.bits.param     := 0.U
-  io.dma_a.bits.source    := 0.U
-  io.dma_a.bits.mask      := 0.U
-  io.dma_a.bits.corrupt   := 0.B
+  //----------------------------------------------------------------------------
+  // DMA Mux
+  //----------------------------------------------------------------------------
+  val gem_dma = Module(new LiteGEMDMA(dmaEdge.bundle, 1))
+  gem_dma.io.dma_a.ready := io.dma_a.ready
+  io.dma_a.valid := gem_dma.io.dma_a.valid
+  io.dma_a.bits  := gem_dma.io.dma_a.bits
 
-  // DMA TL-UH Channel-D
-  val wDmaDSize = 1 << io.dma_a.bits.size.getWidth
-  val dma_d_cnt = RegInit((beatBytes + 1).U(wDmaDSize.W))
-  val dma_d_tot = 1.U((wDmaDSize + 1).W) << io.dma_d.bits.size
-  val dma_d_rem = WireDefault(dma_d_tot - dma_d_cnt)
-  val dma_d_eop = WireDefault(dma_d_rem(wDmaDSize.U))
-  when (io.dma_d.valid) {
-    dma_d_cnt := Mux(dma_d_eop, (beatBytes + 1).U, dma_d_cnt + beatBytes.U)
-  }
-  gem_txd.io.dma_di.last  := dma_d_eop
-  gem_txd.io.dma_di.valid := io.dma_d.valid && io.dma_d.bits.opcode === 1.U
-  gem_txd.io.dma_di.data  := io.dma_d.bits.data
-  io.dma_d.ready          := gem_txd.io.dma_di.ready
+  io.dma_d.ready := gem_dma.io.dma_d.ready
+  gem_dma.io.dma_d.valid := io.dma_d.valid
+  gem_dma.io.dma_d.bits  := io.dma_d.bits
+
+  gem_dma.io.dma_do(0) <> gem_txd.io.dma_di
+  gem_dma.io.dma_di(0) <> gem_txd.io.dma_do
+  gem_dma.io.dma_ad(0) := gem_txd.io.dma_ad
+  gem_dma.io.dma_sz(0) := gem_txd.io.dma_sz
+  gem_dma.io.dma_we(0) := gem_txd.io.dma_we
 }
 
 class LiteGEMMan extends Module {
@@ -395,8 +388,8 @@ class LiteGEMMan extends Module {
     when(rw === 2.U) { // read
       man_do := regs(rega)
       man_dv := 1.B
-    }
-    /* when (rw === 1.U) { // write
+    } /*
+    when (rw === 1.U) { // write
       regs(rega) := io.man_di(15,0)
     }*/
   }
@@ -420,6 +413,85 @@ class LiteGEMMan extends Module {
   regs(14) := "b0000_0000_0000_0000".U // Empty
   regs(15) := "b0000_0001_0000_0000".U // 1000Base-T Full-Duplex
 }
+
+class LiteGEMDMA(bundle: TLBundleParameters, queNum: Int, maxReq: Int = 4) extends Module {
+  val wReqNum = log2Ceil(maxReq)
+  val wQueNum = log2Ceil(queNum)
+
+  val io = IO(new Bundle{
+    val dma_do = Vec(queNum, PacketIO(UInt(bundle.dataBits.W)))
+    val dma_di = Flipped(Vec(queNum, PacketIO(UInt(bundle.dataBits.W))))
+    val dma_ad = Input  (Vec(queNum, UInt(bundle.addressBits.W)))
+    val dma_sz = Input  (Vec(queNum, UInt(bundle.sizeBits.W)))
+    val dma_we = Input  (Vec(queNum, Bool()))
+    val dma_a  = Decoupled(new TLBundleA(bundle))
+    val dma_d  = Flipped(Decoupled(new TLBundleD(bundle)))
+  })  
+
+  val mem = RegInit(VecInit.fill(maxReq)(0.U(wQueNum.W)))
+  val act = RegInit(VecInit.fill(maxReq)(0.B))
+  val msk = ~Cat(act.reverse)
+  val sop = RegInit(1.B)
+  val req = WireDefault(0.U(wReqNum.W))
+  val qn0 = WireDefault(0.U(wQueNum.W))
+  val qn1 = RegNext(qn0)
+  val que = Mux(sop, qn0, qn1)
+
+  qn0 := Log2(Cat(io.dma_di.reverse.map(_.valid)))
+  req := Log2(msk)
+
+  when (io.dma_di(que).fire()) {
+    sop := io.dma_di(que).last
+  }
+
+  when (io.dma_di(que).fire() && sop) {
+    mem(req) := que
+    act(req) := 1.B
+  }
+
+  io.dma_di(que).ready  := msk.orR && io.dma_a.ready
+  io.dma_a.valid        := msk.orR && io.dma_di(que).valid
+  io.dma_a.bits.data    := io.dma_di(que).data
+  io.dma_a.bits.address := io.dma_ad(que)
+  io.dma_a.bits.size    := io.dma_sz(que)
+  io.dma_a.bits.opcode  := Mux(io.dma_we(que), 0.U, 4.U)
+  io.dma_a.bits.param   := 0.U
+  io.dma_a.bits.source  := req
+  io.dma_a.bits.mask    := 0.U
+  io.dma_a.bits.corrupt := 0.B
+
+  //----------------------------------------------------------------------------
+  for (idx <- 0 until queNum) {
+    io.dma_do(idx).valid := 0.B
+    io.dma_do(idx).data  := 0.U
+  }
+  io.dma_d.ready := 0.B
+
+  val snk = WireDefault(0.U(wQueNum.W))
+  when (io.dma_d.valid) {
+    snk := mem(io.dma_d.bits.source)
+    io.dma_do(snk).valid := io.dma_d.valid
+    io.dma_do(snk).data  := io.dma_d.bits.data 
+    io.dma_d.ready       := io.dma_do(snk).ready
+  }
+
+  //----------------------------------------------------------------------------
+  val wDmaDSize = 1 << bundle.sizeBits
+  val beatBytes = bundle.dataBits / 8
+  val dma_d_cnt = RegInit((beatBytes + 1).U(wDmaDSize.W))
+  val dma_d_tot = 1.U((wDmaDSize + 1).W) << io.dma_d.bits.size
+  val dma_d_rem = WireDefault(dma_d_tot - dma_d_cnt)
+  val dma_d_eop = WireDefault(dma_d_rem(wDmaDSize.U))
+  when (io.dma_d.fire()) {
+    dma_d_cnt := Mux(dma_d_eop, (beatBytes + 1).U, dma_d_cnt + beatBytes.U)
+  }
+  io.dma_do(req).last := dma_d_eop
+
+  //----------------------------------------------------------------------------
+  when (io.dma_d.fire() && dma_d_eop) {
+    act(io.dma_d.bits.source) := 0.B
+  }
+}
  
 class LiteGEMTxD(wData: Int, txqNum: Int = 16, daw64: Bool = 0.B) extends Module {
   val io = IO(new Bundle{
@@ -441,11 +513,7 @@ class LiteGEMTxD(wData: Int, txqNum: Int = 16, daw64: Bool = 0.B) extends Module
 
   val wTxDsc = 16
 
-  io.tx_clk      := io.gtx_clk
-  io.txd         := io.dma_di.data
-  io.tx_en       := io.dma_di.valid
-  io.tx_er       := 0.B
-
+  io.tx_clk := io.gtx_clk
   io.dma_di.ready := 0.B
   io.dma_do.valid := 0.B
   io.dma_do.data  := 0.B
@@ -455,6 +523,8 @@ class LiteGEMTxD(wData: Int, txqNum: Int = 16, daw64: Bool = 0.B) extends Module
   val state   = RegInit(s_idle)
   val txq_ptr = RegInit(0.U(log2Ceil(txqNum).W))
   val txq_ren = RegInit(0.B)
+  val txq_fwd = RegInit(0.B)
+
   io.dma_ad := 0.U
   io.dma_sz := 0.U
   io.dma_we := 0.B
@@ -469,11 +539,21 @@ class LiteGEMTxD(wData: Int, txqNum: Int = 16, daw64: Bool = 0.B) extends Module
   val wReqLen = log2Ceil(maxReqL)
   val req_tot = 0.U(1.W) ## dsc_ctl(11, 0)
   val req_ptr = RegInit(1.U(12.W))
-  val req_rem = req_tot - req_ptr
   val req_adr = WireDefault(dsc_adr + req_ptr)
+  val req_rem = req_tot - req_ptr
+  val req_eop = req_rem(12)
 
-  io.dma_di.ready := txq_ren
+  val rsp_sot = RegInit(0.B)
+  val rsp_ptr = RegInit(1.U(12.W))
+  val rsp_rem = req_tot - rsp_ptr
+  val rsp_eop = rsp_rem(12)
+
   dontTouch(dsc_mem)
+  dontTouch(io.dma_we)
+
+  when (io.dma_di.fire()) {
+    rsp_sot := io.dma_di.last
+  }
 
   switch (state) {
     is (s_idle) {
@@ -495,11 +575,11 @@ class LiteGEMTxD(wData: Int, txqNum: Int = 16, daw64: Bool = 0.B) extends Module
       }
     }
     is (s_rcv1) {
-      when (io.dma_di.valid && dsc_ptr =/= wDscMem.U) {
+      when (io.dma_di.fire() && dsc_ptr =/= wDscMem.U) {
         dsc_mem := dsc_mem | (io.dma_di.data << dsc_ptr)
         dsc_ptr := dsc_ptr + wData.U
       }
-      when (io.dma_di.valid && io.dma_di.last) {
+      when (io.dma_di.fire() && io.dma_di.last) {
         state   := s_req2
         txq_ren := 0.B
         req_ptr := 0.U
@@ -514,19 +594,56 @@ class LiteGEMTxD(wData: Int, txqNum: Int = 16, daw64: Bool = 0.B) extends Module
       io.dma_ad       := req_adr
       when (io.dma_do.ready) {
         req_ptr := req_ptr + maxReqL.U
-        state   := s_rcv2
-        txq_ren := 1.B
+        state   := Mux(req_eop, s_rcv2, s_req2)
+        txq_fwd := 1.B
+      }
+      when (io.dma_di.fire() && io.dma_di.last) {
+        rsp_ptr := rsp_ptr + maxReqL.U
       }
     }
     is (s_rcv2) {
-      when (io.dma_di.valid && io.dma_di.last) {
-        state   := Mux(req_rem(12), s_done, s_req2)
-        txq_ren := 0.B
+      when (io.dma_di.fire() && io.dma_di.last) {
+        rsp_ptr := rsp_ptr + maxReqL.U
+        when (rsp_eop) {
+          txq_fwd := 0.B
+          state   := s_done
+        }.otherwise {
+          state := s_rcv2
+        }
       }
     }
     is (s_done) {
       state := s_done
     }
   }
+
+  //----------------------------------------------------------------------------
+  val fifo = Module(new PacketQueue(PacketIO(UInt(wData.W)), PacketIO(UInt(8.W))))
+
+  fifo.io.enq.valid := io.dma_di.valid && txq_fwd
+  fifo.io.enq.last  := io.dma_di.last && rsp_eop
+  fifo.io.enq.data  := io.dma_di.data
+  io.dma_di.ready   := txq_ren || txq_fwd && fifo.io.enq.ready
+
+  val txd_val = WireDefault(0.U(8.W))
+  val txd_cnt = RegInit(0.U(4.W))
+  val txd_ten = fifo.io.deq.valid && fifo.io.cnt.orR 
+
+  fifo.io.deq.ready := 0.B
+
+  when (txd_cnt(3)) {
+    fifo.io.deq.ready := 1.B
+    txd_val := fifo.io.deq.data
+    when (fifo.io.deq.fire() && fifo.io.deq.last) {
+      txd_cnt := 0.U
+    }
+  }.elsewhen (txd_ten) {
+    txd_val := Mux(txd_cnt === 7.U, 0x5D.U, 0x55.U)
+    txd_cnt := txd_cnt + 1.U
+  }
+
+  io.txd   := txd_val
+  io.tx_en := txd_ten
+  io.tx_er := 0.B
 }
 

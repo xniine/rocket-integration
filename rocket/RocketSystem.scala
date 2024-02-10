@@ -102,6 +102,8 @@ object RocketSystem {
       },
       firtoolOpts=Array(
         //"--add-vivado-ram-address-conflict-synthesis-bug-workaround",
+        "--lowering-options=disallowLocalVariables",
+        "--preserve-aggregate=1d-vec",
         "--lower-memories",
         "--disable-all-randomization",
         "--disable-annotation-unknown",

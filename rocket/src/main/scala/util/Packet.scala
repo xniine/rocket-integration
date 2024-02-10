@@ -34,140 +34,143 @@ class PacketQueue[T1 <: Data, T2 <: Data, T3 <: Data] (
   val io = IO(new Bundle {
     val enq = Flipped(din)
     val deq = dout
+    val cnt = Output(UInt(log2Ceil(count).W))
   })
 
   //----------------------------------------------------------------------------
-  val wDataOut = dout.data.getWidth
-  val wDataIn  = din.data.getWidth
+  val pkt_enq = io.enq.fire() && io.enq.last
+  val pkt_deq = io.deq.fire() && io.deq.last
+  val pkt_cnt = RegInit(0.U(log2Ceil(count).W))
+  when (pkt_enq && !pkt_deq) {
+    pkt_cnt := pkt_cnt + 1.U
+  }.elsewhen (!pkt_enq && pkt_deq) {
+    pkt_cnt := pkt_cnt - 1.U
+  }
+  io.cnt := pkt_cnt
 
-  assert(wDataIn < wDataOut || wDataIn  % wDataOut == 0)
-  assert(wDataIn > wDataOut || wDataOut % wDataIn  == 0)
-  assert(wDataIn * depth % wDataOut == 0)
+  //----------------------------------------------------------------------------
+  val wOutput = dout.data.getWidth
+  val wDataIn = din.data.getWidth
+
+  assert(wDataIn < wOutput || wDataIn  % wOutput == 0)
+  assert(wDataIn > wOutput || wOutput % wDataIn  == 0)
+  assert(wDataIn * depth % wOutput == 0)
 
   io.deq.last := RegInit(0.B)
   io.deq.data := RegInit(0.U)
 
   //----------------------------------------------------------------------------
-  val buffer = if (wDataIn < wDataOut) {
-    SyncReadMem(depth * wDataIn / wDataOut, UInt((wDataOut + 1).W))
+  val buffer = if (wDataIn < wOutput) {
+    SyncReadMem(depth * wDataIn / wOutput, UInt((wOutput + 1).W))
   } else {
     SyncReadMem(depth, UInt((wDataIn + 1).W))
   }
 
   //----------------------------------------------------------------------------
   val wPktP = log2Ceil(count)
-  val wMemP = if (wDataIn < wDataOut) {
-    log2Ceil(depth * wDataIn / wDataOut)
+  val wMemP = if (wDataIn < wOutput) {
+    log2Ceil(depth * wDataIn / wOutput)
   } else {
     log2Ceil(depth)
   }
 
-  val pFull = WireDefault(0.B)
-  val bHead = RegInit(0.U(wMemP.W))
-  val bTail = RegInit(0.U(wMemP.W))
-  val bNext = WireDefault(0.U(wMemP.W))
+  val pkt_ful = WireDefault(0.B)
+  val buf_hdr = RegInit(0.U(wMemP.W))
+  val buf_end = RegInit(0.U(wMemP.W))
+  val buf_nxt = WireDefault(0.U(wMemP.W))
 
   //----------------------------------------------------------------------------
   // Enque/Deque Packet Metadata
   //----------------------------------------------------------------------------
   if (io.enq.metaType != DontCare) {
-    val packet = Reg(Vec(count, io.enq.metaType))
+    val packets = Reg(Vec(count, io.enq.metaType))
+    val pkt_hdr = Reg (0.U(wPktP.W))
+    val pkt_end = Reg (0.U(wPktP.W))
+    val pkt_nxt = WireDefault(Mux(pkt_hdr === (count - 1).U, 0.U, pkt_hdr + 1.U))
     //--------------------------------------------------------------------------
-    val pHead  = Reg (0.U(wPktP.W))
-    val pTail  = Reg (0.U(wPktP.W))
-    val pNext  = WireDefault(Mux(pHead === (count - 1).U, 0.U, pHead + 1.U))
-    //--------------------------------------------------------------------------
-    val enqSop = RegInit(1.B)
-    when (io.enq.fire()) { enqSop := io.enq.last }
-    when (io.enq.fire() && enqSop) {
-      packet(pHead) := io.enq.meta
-      pHead         := pNext
+    val enq_sop = RegInit(1.B)
+    when (io.enq.fire()) { enq_sop := io.enq.last }
+    when (io.enq.fire() && enq_sop) {
+      packets(pkt_hdr) := io.enq.meta
+      pkt_hdr          := pkt_nxt
     }
     //--------------------------------------------------------------------------
-    val deqEop = WireDefault(io.deq.fire() && io.deq.last)
-    val deqSop = RegInit(0.B)
-    when (io.deq.fire()) { deqSop := io.deq.last }
-    val deqOut = (deqEop || deqSop && !io.deq.valid) && pHead =/= pTail
-    when (deqOut) {
-      io.deq.data := packet(pTail)
-      pTail       := Mux(pTail === (count - 1).U, 0.U, pTail + 1.U)
+    val deq_eop = WireDefault(io.deq.fire() && io.deq.last)
+    val deq_sop = RegInit(0.B)
+    when (io.deq.fire()) { deq_sop := io.deq.last }
+    val deq_out = (deq_eop || deq_sop && !io.deq.valid) && pkt_hdr =/= pkt_end
+    when (deq_out) {
+      io.deq.data := packets(pkt_end)
+      pkt_end     := Mux(pkt_end === (count - 1).U, 0.U, pkt_end + 1.U)
     }
     //--------------------------------------------------------------------------
-    pFull := (pNext === pTail)
+    pkt_ful := (pkt_nxt === pkt_end)
   }
 
   //----------------------------------------------------------------------------
   // Enque Packet Data
   //----------------------------------------------------------------------------
-  if (wDataIn >= wDataOut) {
-    val segNum = wDataOut / wDataIn
-    bNext := Mux(bHead === (depth - 1).U, 0.U, bHead + 1.U)
+  if (wDataIn >= wOutput) {
+    val seg_num = wOutput / wDataIn
+    buf_nxt := Mux(buf_hdr === (depth - 1).U, 0.U, buf_hdr + 1.U)
     when (io.enq.fire()) {
-      buffer.write(bHead, io.enq.last ## io.enq.data.asUInt)
-      bHead := bNext
+      buffer.write(buf_hdr, io.enq.last ## io.enq.data.asUInt)
+      buf_hdr := buf_nxt
     }
   } else {
-    val segNum = wDataOut / wDataIn
-    val segCnt = RegInit(0.U(log2Ceil(segNum).W))
-    val segBuf = Reg(UInt((wDataOut - wDataIn).W))
-    val segEoP = Reg(Bool())
+    val seg_num = wOutput / wDataIn
+    val seg_cnt = RegInit(0.U(log2Ceil(seg_num).W))
+    val seg_buf = Reg(UInt((wOutput - wDataIn).W))
+    val seg_eop = Reg(Bool())
 
-    bNext := Mux(bHead === (depth - 1).U, 0.U, bHead + 1.U)
-    bNext := Mux(bHead === (depth - segNum).U, 0.U, bHead + segNum.U)
+    buf_nxt := Mux(buf_hdr === (depth - seg_num).U, 0.U, buf_hdr + seg_num.U)
     when (io.enq.fire()) {
-      when (segCnt === (segNum - 1).U || io.enq.last) {
-        buffer.write(bHead, (io.enq.last || segEoP) ## io.enq.data.asUInt ## segBuf)
-        bHead  := bNext
-        segEoP := 0.B
-        segBuf := 0.U
+      when (seg_cnt === (seg_num - 1).U || io.enq.last) {
+        buffer.write(buf_hdr, (io.enq.last || seg_eop) ## io.enq.data.asUInt ## seg_buf)
+        buf_hdr := buf_nxt
+        seg_eop := 0.B
+        seg_buf := 0.U
       }.otherwise {
-        segBuf := io.enq.data.asUInt ## segBuf(wDataIn-1,wDataOut) 
-        segEoP := segEoP || io.enq.last
+        seg_buf := io.enq.data.asUInt ## seg_buf(wDataIn - 1, wOutput) 
+        seg_eop := seg_eop || io.enq.last
       }
-      segCnt := Mux(segCnt === (segNum - 1).U, 0.U, segCnt + 1.U)
+      seg_cnt := Mux(seg_cnt === (seg_num - 1).U, 0.U, seg_cnt + 1.U)
     }
   }
 
   //----------------------------------------------------------------------------
   // Deque Packet Data
   //----------------------------------------------------------------------------
-  if (wDataIn <= wDataOut) {
-    when (io.deq.fire() || !io.deq.valid && bHead =/= bTail) {
-      io.deq.data := buffer.read(bTail)
-      io.deq.last := buffer.read(bTail)(wDataOut)
-      bTail       := Mux(bTail === (depth - 1).U, 0.U, bTail + 1.U)
+  if (wDataIn <= wOutput) {
+    when (io.deq.fire() || !io.deq.valid && buf_hdr =/= buf_end) {
+      io.deq.data := buffer.read(buf_end)
+      io.deq.last := buffer.read(buf_end)(wOutput)
+      buf_end     := Mux(buf_end === (depth - 1).U, 0.U, buf_end + 1.U)
     }
   } else {
-    val segNum = wDataIn / wDataOut
-    val segCnt = RegInit(0.U(log2Ceil(segNum).W))
-    val segBuf = Reg(UInt(wDataIn.W))
+    val seg_num = wDataIn / wOutput
+    val seg_cnt = RegInit(0.U(log2Ceil(seg_num).W))
+    val seg_buf = RegInit(0.U(wDataIn.W))
+    val seg_eop = RegInit(0.B)
+    val seg_ptr = Mux(io.deq.fire(), buf_end + 1.U, buf_end)
+    val seg_mem = buffer.read(seg_ptr)
 
-    val segEoP = Reg(Bool())
-    val segReq = (io.deq.ready || !io.deq.valid) && bHead =/= bTail
-    val segMem = buffer.read(bTail)
+    io.deq.last := seg_eop && (seg_cnt === (seg_num - 1).U)
+    io.deq.data := Mux(seg_cnt === 0.U, seg_mem(wOutput - 1, 0), seg_buf)
+    seg_buf     := Mux(seg_cnt === 0.U, seg_mem >> wOutput, seg_buf >> wOutput)
+    seg_eop     := Mux(seg_cnt === 0.U, seg_mem(wDataIn), seg_eop)
 
-    when (segReq) {
-      io.deq.data := segBuf
-      io.deq.last := 0.B
-      segBuf      := segBuf(wDataIn-1,wDataOut)
-      when (segCnt === 0.U) {
-        segEoP      := segMem(wDataIn)
-        segBuf      := segMem(wDataIn-1,wDataOut)
-        io.deq.data := segMem(wDataOut-1,0)
-      }.elsewhen (segCnt === (segNum - 1).U) {
-        io.deq.last := segEoP
-        bTail       := Mux(bTail === (depth - 1).U, 0.U, bTail + 1.U)
+    when (io.deq.fire()) {
+      seg_cnt := Mux(seg_cnt === (seg_num - 1).U, 0.U, seg_cnt + 1.U)
+      when (seg_cnt === (seg_num - 1).U) {
+        buf_end := Mux(buf_end === (depth - 1).U, 0.U, buf_end + 1.U)
       }
-      segCnt := Mux(segCnt === (segNum - 1).U, 0.U, segCnt + 1.U)
     }
   }
 
   //----------------------------------------------------------------------------
-  val bFull = WireDefault(bNext === bTail)
-  val bWait = WireDefault(bHead =/= bTail)
-
-  io.enq.ready := !(pFull || bFull)
-  io.deq.valid := bWait
+  io.enq.ready := buf_nxt =/= buf_end && !pkt_ful
+  io.deq.valid := buf_hdr =/= buf_end
 }
 
 
