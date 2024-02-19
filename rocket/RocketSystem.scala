@@ -86,6 +86,7 @@ object RocketSystem {
       new WithBootROMFile("bootrom/bootrom-spl.img") ++
       new WithDTS("freechips,rocketchip-riscv64", Nil) ++
       new WithExtMemSize(x"8000_0000") ++
+      new WithInclusiveCache ++
       new WithRocketConfig ++
       new DefaultConfig
     )

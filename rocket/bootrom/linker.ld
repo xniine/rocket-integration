@@ -8,6 +8,6 @@ SECTIONS
     .text.hang : { *(.text.hang) }
     . = ROM_BASE + 0x100; /* 256B */
     .text.spl : { *(.text.spl) }
-    . = ROM_BASE + 0xF200; /* 60K + 512B */
+    . = ROM_BASE + 0xF000; /* 60K */
     .rodata.dtb : { *(.rodata.dtb) }
 }

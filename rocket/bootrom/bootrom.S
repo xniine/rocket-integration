@@ -1,5 +1,5 @@
 #define DRAM_BASE 0x80000000
-#define TEXT_BASE 0x850F0F00 // TXT = 0x85100000 (DTB) - 0xF100 (60K + 256)
+#define TEXT_BASE 0x850F1100 // TXT = 0x85100000 (DTB) - 0xEF00 (59K + 768)
 
 .section .text.start, "ax", @progbits
 .globl _start

@@ -5,7 +5,7 @@ OBJCOPY=riscv64-unknown-elf-objcopy
 
 all: bootrom.img bootrom.elf bootrom.bin
 	cp bootrom.img bootrom-spl.img
-	cat u-boot-spl.bin /dev/zero | dd bs=256 count=241 >> bootrom-spl.img
+	cat u-boot-spl.bin /dev/zero | dd bs=256 count=239 >> bootrom-spl.img # 239 <= (60K - 256) / 256
 
 clean:
 	rm -Rf bootrom.elf bootrom.bin bootrom.img bootrom-spl.img

@@ -53,7 +53,7 @@ int main(int argc, char** argv, char** env) {
     SimDRAM<32,64,4> dram_sim(1024*1024*2048L, dram_ptr);
     //dram_sim.load_binary("./u-boot.itb", 0x80200000);
 
-    SimUART uart_sim(0x364);
+    SimUART uart_sim(0x364); // 0x364 <= 100M / 115200
     uart_sim.txd = &top->uart_0_txd;
     uart_sim.rxd = &top->uart_0_rxd;
 

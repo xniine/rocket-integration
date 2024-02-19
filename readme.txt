@@ -59,7 +59,7 @@ popd
 git clone https://github.com/chipsalliance/rocket-chip-blocks.git
 git clone https://github.com/chipsalliance/rocket-chip-inclusive-cache.git 
 
-pushd rocket-chip-blocks # pushd rocket-chip-inclusive-cache
+pushd rocket-chip-blocks
 
 cat << EOF > build.sbt
 scalaVersion := "2.13.10"
@@ -71,8 +71,26 @@ val rocketChipOut = Glob("../rocket-chip/out/rocketchip/*/assembly.dest/out.jar"
 Compile / unmanagedJars += file(fileTreeView.value.list(rocketChipOut).map(_._1.toString).head)
 EOF
 
-sbt compile
+sbt package
 popd
+
+#-------------------------------------------------------------------------------
+pushd rocket-chip-inclusive-cache
+
+cat << EOF > build.sbt
+scalaVersion := "2.13.10"
+val chiselVersion = "5.1.0"
+addCompilerPlugin("org.chipsalliance" % "chisel-plugin" % chiselVersion cross CrossVersion.full)
+libraryDependencies += "org.chipsalliance" %% "chisel" % chiselVersion
+
+val rocketChipOut = Glob("../rocket-chip/out/rocketchip/*/assembly.dest/out.jar")
+Compile / unmanagedJars += file(fileTreeView.value.list(rocketChipOut).map(_._1.toString).head)
+
+Compile / scalaSource := baseDirectory.value / "design/craft/inclusivecache/src"
+EOF
+
+sbt package
+popd 
 
 #-------------------------------------------------------------------------------
 # Risc-V GNU Toolchain

@@ -12,3 +12,7 @@ Compile / unmanagedJars += file(fileTreeView.value.list(rocketChipOut).map(_._1.
 val sifiveBlocksOut = Glob("../rocket-chip-blocks/target/*/*.jar")
 Compile / unmanagedJars += file(fileTreeView.value.list(sifiveBlocksOut).map(_._1.toString).head)
 
+// sifive-cache
+val sifiveCacheOut = Glob("../rocket-chip-inclusive-cache/target/*/*.jar")
+Compile / unmanagedJars += file(fileTreeView.value.list(sifiveCacheOut).map(_._1.toString).head)
+

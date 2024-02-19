@@ -8,6 +8,7 @@ rocket/bootrom/*.bin
 rocket/bootrom/*.img
 rocket/project
 rocket/target
+test/sym.txt
 test/*.log
 test/*.sv
 test/*.vcd
