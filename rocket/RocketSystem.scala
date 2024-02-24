@@ -70,7 +70,7 @@ class RocketSystem(implicit p: Parameters) extends RocketSubsystem
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-class WithRocketConfig extends Config((site, here, up) => {
+class WithExtRocketConfig extends Config((site, here, up) => {
   case PeripheryLiteGEMKey  => Seq(LiteGEMParams (0x10014000))
   case PeripheryLiteTTCKey  => Seq(LiteTTCParams (0x10012000))
   case PeripherySPIFlashKey => Seq(SPIFlashParams(0x1001F000, 0x20000000, defaultSampleDel=0))
@@ -79,46 +79,73 @@ class WithRocketConfig extends Config((site, here, up) => {
 
 object RocketSystem {
   var modules = Seq[BaseSubsystem]()
-  def apply() = {
-    val config = new Config(
-      new WithoutTLMonitors ++
-      new WithPeripheryBusFrequency(100) ++
-      new WithBootROMFile("bootrom/bootrom-spl.img") ++
-      new WithDTS("freechips,rocketchip-riscv64", Nil) ++
-      new WithExtMemSize(x"8000_0000") ++
-      new WithInclusiveCache ++
-      new WithRocketConfig ++
-      new DefaultConfig
-    )
-    val rocket = LazyModule(new RocketSystem()(config))
-    modules = modules ++ Seq(rocket)
-    rocket.module
-  }
+  var outputs = Map(
+    "RocketSystem" -> {
+      () => {
+        val config = new Config(
+          new WithoutTLMonitors ++
+          new WithPeripheryBusFrequency(100) ++
+          new WithBootROMFile("bootrom/bootrom-spl.img") ++
+          new WithDTS("freechips,rocketchip-riscv64", Nil) ++
+          new WithExtMemSize(x"8000_0000") ++
+          //new WithInclusiveCache ++
+          new WithExtRocketConfig ++
+          new DefaultConfig
+        )
+        val rocket = LazyModule(new RocketSystem()(config))
+        modules = modules ++ Seq(rocket)
+        rocket.module
+      }
+    },
+    "RocketMed" -> {
+      () => {
+        val config = new Config(
+          new WithoutTLMonitors ++
+          new WithPeripheryBusFrequency(100) ++
+          new WithBootROMFile("bootrom/bootrom-spl.img") ++
+          new WithDTS("freechips,rocketchip-riscv64", Nil) ++
+          new WithExtMemSize(x"8000_0000") ++
+          new WithExtRocketConfig ++
+          new WithNMedCores(1) ++
+          new WithCoherentBusTopology ++
+          new BaseConfig
+        )
+        val rocket = LazyModule(new RocketSystem()(config))
+        modules = modules ++ Seq(rocket)
+        rocket.module
+      }
+    }
+  )
   //----------------------------------------------------------------------------
   def main(args: Array[String]): Unit = {
-    val moduleName = "RocketSystem"
+    var name = if (args.length > 0) args(0) else "RocketSystem" 
 
-    ChiselStage.emitSystemVerilog({
-        this() //new TestHarness()(new DefaultConfig)
-      },
-      firtoolOpts=Array(
-        //"--add-vivado-ram-address-conflict-synthesis-bug-workaround",
-        "--lowering-options=disallowLocalVariables",
-        "--preserve-aggregate=1d-vec",
-        "--lower-memories",
-        "--disable-all-randomization",
-        "--disable-annotation-unknown",
-        "--strip-debug-info",
-        "--verilog", "-o", s"${moduleName}.sv" //"--split-verilog", "-o", "out",
+    outputs.filter(_._1 == name).foreach(mod => { 
+      modules = Seq()
+      val outputName = mod._1
+      ChiselStage.emitSystemVerilog({
+          val module = mod._2()
+          module
+        },
+        firtoolOpts=Array(
+          //"--add-vivado-ram-address-conflict-synthesis-bug-workaround",
+          "--lowering-options=noAlwaysComb,disallowPackedArrays,disallowLocalVariables",
+          //"--preserve-aggregate=1d-vec", // Comment out since iverilog seems dont support 1d-vec = '{...} format
+          "--lower-memories",
+          "--disable-all-randomization",
+          "--disable-annotation-unknown",
+          "--strip-debug-info",
+          "--verilog", "-o", s"${outputName}.sv" //"--split-verilog", "-o", "out",
+        )
       )
-    )
-    //--------------------------------------------------------------------------
-    ElaborationArtefacts.files.foreach {
-      case ("dts", contents) => os.write.over(os.pwd / s"${moduleName}.dts", contents())
-      case _ => ()
-    }
-    val out = Some(new FileOutputStream((os.pwd / s"${moduleName}.dtb").toString))
-    modules.head.dtb.contents.foreach(out.get.write(_))
+      //--------------------------------------------------------------------------
+      ElaborationArtefacts.files.foreach {
+        case ("dts", contents) => os.write.over(os.pwd / s"${outputName}.dts", contents())
+        case _ => ()
+      }
+      val out = Some(new FileOutputStream((os.pwd / s"${outputName}.dtb").toString))
+      modules.head.dtb.contents.foreach(out.get.write(_))
+    })
   }
 }
 

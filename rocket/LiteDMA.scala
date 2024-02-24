@@ -49,8 +49,8 @@ class LiteDMA(bundle: TLBundleParameters, queNum: Int, maxReq: Int = 4) extends 
   when (io.dma_di(que).fire) {
     sop := io.dma_di(que).last
   }
-  qn0 := Log2(Cat(io.dma_di.reverse.map(_.valid)))
-  req := Log2(msk)
+  qn0 := Log2(~scanLeftOr(Cat(io.dma_di.reverse.map(_.valid) :+ 0.B)))
+  req := Log2(~scanLeftOr(Cat(msk, 0.B)))
 
   when (io.dma_di(que).fire && sop) {
     mem(req) := que

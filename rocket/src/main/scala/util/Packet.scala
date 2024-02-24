@@ -52,12 +52,13 @@ class PacketQueue[T1 <: Data, T2 <: Data, T3 <: Data] (
   assert(wDataIn * depth % wOutput == 0)
  
   //----------------------------------------------------------------------------
-  val wPktP = log2Ceil(count)
-  val wMemP = if (wDataIn < wOutput) {
-    log2Ceil(depth * wDataIn / wOutput)
+  val bSize = if (wDataIn < wOutput) {
+    depth * wDataIn / wOutput
   } else {
-    log2Ceil(depth)
+    depth
   }
+  val wPktP = log2Ceil(count)
+  val wMemP = log2Ceil(bSize)
 
   //----------------------------------------------------------------------------
   val buffer = if (wDataIn < wOutput) {
@@ -66,19 +67,15 @@ class PacketQueue[T1 <: Data, T2 <: Data, T3 <: Data] (
     Mem(depth, UInt((wDataIn + 1).W))
   }
 
-  val buf_h2w = WireDefault(0.U((wMemP + 1).W))
-  val buf_e2r = WireDefault(0.U((wMemP + 1).W))
-  val buf_hq0 = buf_h2w ^ buf_h2w(wMemP, 1)
-  val buf_eq0 = buf_e2r ^ buf_e2r(wMemP, 1)
+  val buf_hdr = WireDefault(0.U((wMemP + 1).W))
+  val buf_end = WireDefault(0.U((wMemP + 1).W))
+  val buf_hq0 = buf_hdr ^ buf_hdr(wMemP, 1)
+  val buf_eq0 = buf_end ^ buf_end(wMemP, 1)
 
   val buf_ful = WireDefault(0.B)
   val buf_emp = WireDefault(0.B)
   val pkt_ful = WireDefault(0.B)
   val pkt_emp = WireDefault(0.B)
-
-  dontTouch(buf_ful)
-  dontTouch(buf_emp)
-  dontTouch(pkt_emp)
 
   val enq_clk = if (async) io.enq_clk else clock
   val deq_clk = if (async) io.deq_clk else clock
@@ -107,7 +104,9 @@ class PacketQueue[T1 <: Data, T2 <: Data, T3 <: Data] (
       }
 
       val enq_eop = WireDefault(io.enq.fire && io.enq.last)
-      when (enq_eop) {
+      val enq_sop = RegInit(1.B)
+      enq_sop := Mux(enq_eop, 1.B, enq_sop && !io.enq.fire)
+      when (io.enq.fire && enq_eop) {
         pkt_h2w := Mux(pkt_h2w(wPktP - 1, 0) === count.U, Cat(!pkt_h2w(wPktP), 0.U(wPktP.W)), pkt_h2w + 1.U)
       }
     }
@@ -184,21 +183,20 @@ class PacketQueue[T1 <: Data, T2 <: Data, T3 <: Data] (
       emp_out := emp_mem.read(pkt_end, deq_clk)
     }
   }
-  dontTouch(emp_out)
 
   //----------------------------------------------------------------------------
   // Enqueue/Dequeue Packet Data Frame
   //----------------------------------------------------------------------------
   withClock (enq_clk) {
-    val buf_hdr = RegInit(0.U((wMemP + 1).W))
-    buf_h2w := buf_hdr
+    val buf_h2w = RegInit(0.U((wMemP + 1).W))
+    buf_hdr := buf_h2w
 
     if (async) {
       val buf_eq1 = RegNext(buf_eq0, 0.U)
       val buf_eq2 = RegNext(buf_eq1, 0.U)
       buf_ful := buf_hq0 === Cat(~buf_eq2(wMemP, wMemP - 1), buf_eq2(wMemP - 2, 0))
     } else {
-      buf_ful := buf_hdr === Cat(~buf_e2r(wMemP, wMemP), buf_e2r(wMemP - 1, 0))
+      buf_ful := buf_h2w === Cat(~buf_end(wMemP, wMemP), buf_end(wMemP - 1, 0))
     }
 
     //----------------------------------------------------------------------------
@@ -207,8 +205,8 @@ class PacketQueue[T1 <: Data, T2 <: Data, T3 <: Data] (
     if (wDataIn >= wOutput) {
       val seg_num = wOutput / wDataIn
       when (io.enq.fire) {
-        buffer.write(buf_hdr, io.enq.last ## io.enq.data.asUInt, enq_clk)
-        buf_hdr := Mux(buf_hdr === (depth - 1).U, Cat(!buf_hdr(wMemP), 0.U(wMemP.W)), buf_hdr + 1.U)
+        buffer.write(buf_h2w, io.enq.last ## io.enq.data.asUInt, enq_clk)
+        buf_h2w := Mux(buf_h2w(wMemP - 1, 0) === (bSize - 1).U, Cat(!buf_h2w(wMemP), 0.U(wMemP.W)), buf_h2w + 1.U)
       }
     } else {
       val seg_num = wOutput / wDataIn
@@ -220,8 +218,8 @@ class PacketQueue[T1 <: Data, T2 <: Data, T3 <: Data] (
         seg_cnt := Mux(seg_cnt === (seg_num - 1).U, 0.U, seg_cnt + 1.U)
 
         when (seg_cnt === (seg_num - 1).U || io.enq.last) {
-          buffer.write(buf_hdr, (io.enq.last || seg_eop) ## io.enq.data.asUInt ## seg_buf, enq_clk)
-          buf_hdr := Mux(buf_hdr(wMemP - 1, 0) === (depth - 1).U, Cat(!buf_hdr(wMemP), 0.U(wMemP.W)), buf_hdr + 1.U)
+          buffer.write(buf_h2w, (io.enq.last || seg_eop) ## io.enq.data.asUInt ## seg_buf, enq_clk)
+          buf_h2w := Mux(buf_h2w(wMemP - 1, 0) === (bSize - 1).U, Cat(!buf_h2w(wMemP), 0.U(wMemP.W)), buf_h2w + 1.U)
           seg_eop := 0.B
           seg_buf := 0.U
         }.otherwise {
@@ -234,64 +232,69 @@ class PacketQueue[T1 <: Data, T2 <: Data, T3 <: Data] (
 
   //----------------------------------------------------------------------------
   withClock(deq_clk) {
-    val buf_end = RegInit(0.U((wMemP + 1).W))
-    buf_e2r := buf_end
+    val buf_e2r = RegInit(0.U((wMemP + 1).W))
+    buf_end := buf_e2r
 
     if (async) {
       val buf_hq1 = RegNext(buf_hq0, 0.U)
       val buf_hq2 = RegNext(buf_hq1, 0.U)
       buf_emp := buf_eq0 === buf_hq2
     } else {
-      buf_emp := buf_end === buf_h2w
+      buf_emp := buf_e2r === buf_hdr
     }
     
     //----------------------------------------------------------------------------
-    val seg_emp = RegInit(0.B)
 
     if (wDataIn <= wOutput) {
       when (io.deq.fire || !io.deq.valid && !buf_emp) {
-        val deq_mem = buffer.read(buf_end(wMemP - 1, 0), deq_clk)
+        val deq_mem = buffer.read(buf_e2r(wMemP - 1, 0), deq_clk)
         io.deq.data := deq_mem
         io.deq.last := deq_mem(wOutput)
         if (hasEmpt) {
           io.deq.empty := emp_out
         }
-        buf_end := Mux(buf_end(wMemP - 1, 0) === (depth - 1).U, Cat(!buf_end(wMemP), 0.U(wMemP.W)), buf_end + 1.U)
+        buf_e2r := Mux(buf_e2r(wMemP - 1, 0) === (bSize - 1).U, Cat(!buf_e2r(wMemP), 0.U(wMemP.W)), buf_e2r + 1.U)
       }
     } else {
       val wLane   = log2Ceil(wOutput / 8)
       val seg_num = wDataIn / wOutput
       val seg_cnt = RegInit(0.U(log2Ceil(seg_num).W))
       val seg_buf = RegInit(0.U((wDataIn + 1).W))
+      val seg_mem = buffer.read(buf_e2r(wMemP - 1, 0), deq_clk)
       val seg_eop = RegInit(0.B)
-      val seg_mem = buffer.read(buf_end(wMemP - 1, 0), deq_clk)
+      val seg_eot = RegInit(0.B)
 
       io.deq.data := Mux(seg_cnt === 0.U, seg_mem(wOutput - 1, 0), seg_buf)
       seg_eop     := Mux(seg_cnt === 0.U, seg_mem(wDataIn), seg_eop)
- 
       when (io.deq.fire) {
-        seg_buf := Mux(seg_cnt === 0.U, seg_mem >> wOutput, seg_buf >> wOutput)
-        seg_cnt := Mux(seg_cnt === (seg_num - 1).U, 0.U, seg_cnt + 1.U)
-        when (seg_cnt === (seg_num - 1).U) {
-          buf_end := Mux(buf_end === (depth - 1).U, 0.U, buf_end + 1.U)
-          seg_emp := 0.B
+        seg_eot := seg_cnt === (seg_num - 2).U
+        when (hasEmpt.B && seg_eop) {
+          seg_eot := !seg_eot && (seg_cnt + emp_out(wEmpt - 1, wLane) === (seg_num - 2).U)
         }
       }
 
       if (hasEmpt) {
-        io.deq.empty := emp_out
-        io.deq.last  := seg_eop && seg_cnt + emp_out(wEmpt - 1, wLane) === (seg_num - 1).U
-        seg_emp      := io.deq.fire && io.deq.last
+        io.deq.empty := Mux(seg_eop, 0.U, emp_out)
+        io.deq.last  := seg_eop && seg_eot
       } else {
         io.deq.last  := seg_eop && seg_cnt === (seg_num - 1).U
+      }
+
+      when (io.deq.fire) {
+        seg_buf := Mux(seg_cnt === 0.U, seg_mem >> wOutput, seg_buf >> wOutput)
+        seg_cnt := seg_cnt + 1.U
+        when (seg_eot) {
+          buf_e2r := Mux(buf_e2r(wMemP - 1, 0) === (bSize - 1).U, Cat(!buf_e2r(wMemP), 0.U(wMemP.W)), buf_e2r + 1.U)
+          seg_cnt := 0.U
+        }
       }
     }
 
     //--------------------------------------------------------------------------
     if (frame) {
-      io.deq.valid := !seg_emp && !buf_emp && !pkt_emp
+      io.deq.valid := !buf_emp && !pkt_emp
     } else {
-      io.deq.valid := !seg_emp && !buf_emp
+      io.deq.valid := !buf_emp
     }
   }
 }
