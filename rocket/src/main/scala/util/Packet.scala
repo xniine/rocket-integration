@@ -47,22 +47,17 @@ class PacketQueue[T1 <: Data, T2 <: Data, T3 <: Data] (
   val wOutput = deque.data.getWidth
   val hasEmpt = enque.hasEmpty
 
-  assert(wDataIn < wOutput || wDataIn  % wOutput == 0)
-  assert(wDataIn > wOutput || wOutput % wDataIn  == 0)
-  assert(wDataIn * depth % wOutput == 0)
+  assert(wDataIn < wOutput || wDataIn % wOutput == 0)
+  assert(wDataIn > wOutput || wOutput % wDataIn == 0)
  
   //----------------------------------------------------------------------------
-  val bSize = if (wDataIn < wOutput) {
-    depth * wDataIn / wOutput
-  } else {
-    depth
-  }
+  val bSize = depth
   val wPktP = log2Ceil(count)
   val wMemP = log2Ceil(bSize)
 
   //----------------------------------------------------------------------------
   val buffer = if (wDataIn < wOutput) {
-    Mem(depth * wDataIn / wOutput, UInt((wOutput + 1).W))
+    Mem(depth, UInt((wOutput + 1).W))
   } else {
     Mem(depth, UInt((wDataIn + 1).W))
   }
@@ -211,11 +206,11 @@ class PacketQueue[T1 <: Data, T2 <: Data, T3 <: Data] (
     } else {
       val seg_num = wOutput / wDataIn
       val seg_cnt = RegInit(0.U(log2Ceil(seg_num).W))
-      val seg_buf = Reg(UInt((wOutput - wDataIn).W))
-      val seg_eop = Reg(Bool())
+      val seg_buf = RegInit(0.U((wOutput - wDataIn).W))
+      val seg_eop = RegInit(0.B)
 
       when (io.enq.fire) {
-        seg_cnt := Mux(seg_cnt === (seg_num - 1).U, 0.U, seg_cnt + 1.U)
+        seg_cnt := Mux(io.enq.last || seg_cnt === (seg_num - 1).U, 0.U, seg_cnt + 1.U)
 
         when (seg_cnt === (seg_num - 1).U || io.enq.last) {
           buffer.write(buf_h2w, (io.enq.last || seg_eop) ## io.enq.data.asUInt ## seg_buf, enq_clk)
@@ -223,7 +218,7 @@ class PacketQueue[T1 <: Data, T2 <: Data, T3 <: Data] (
           seg_eop := 0.B
           seg_buf := 0.U
         }.otherwise {
-          seg_buf := io.enq.data.asUInt ## seg_buf(wDataIn - 1, wOutput) 
+          seg_buf := io.enq.data.asUInt ## seg_buf(wOutput - wDataIn - 1, wDataIn) 
           seg_eop := seg_eop || io.enq.last
         }
       }
@@ -244,15 +239,21 @@ class PacketQueue[T1 <: Data, T2 <: Data, T3 <: Data] (
     }
     
     //----------------------------------------------------------------------------
-
     if (wDataIn <= wOutput) {
-      when (io.deq.fire || !io.deq.valid && !buf_emp) {
-        val deq_mem = buffer.read(buf_e2r(wMemP - 1, 0), deq_clk)
-        io.deq.data := deq_mem
-        io.deq.last := deq_mem(wOutput)
-        if (hasEmpt) {
-          io.deq.empty := emp_out
-        }
+      io.deq.data := 0.U
+      io.deq.last := 0.B
+      if (hasEmpt) {
+        io.deq.empty := 0.U
+      }
+
+      val deq_mem = buffer.read(buf_e2r(wMemP - 1, 0), deq_clk)
+      io.deq.data := deq_mem
+      io.deq.last := deq_mem(wOutput)
+      if (hasEmpt) {
+        io.deq.empty := emp_out
+      }
+
+      when (io.deq.fire) {
         buf_e2r := Mux(buf_e2r(wMemP - 1, 0) === (bSize - 1).U, Cat(!buf_e2r(wMemP), 0.U(wMemP.W)), buf_e2r + 1.U)
       }
     } else {

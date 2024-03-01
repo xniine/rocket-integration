@@ -334,45 +334,63 @@ class LiteGEMAdapter(beatBytes: Int, bundle: TLBundleParameters) extends Module 
   //----------------------------------------------------------------------------
   // Management Port (MDIO)
   //----------------------------------------------------------------------------
-  val gem_man = Module(new LiteGEMMan)
-  gem_man.io.phy_id  := io.port.phy_id
-  gem_man.io.phy_ad  := io.port.phy_ad
-  gem_man.io.status  := io.port.status
-  gem_man.io.mpe     := io.ctl.in.NCR(4)
-  gem_man.io.man_di  := io.ctl.in.MAN
-  io.man_en          := gem_man.io.man_en
-  io.man_do          := gem_man.io.man_do
+  val gem_phy = Module(new LiteGEMPhyMan)
+  gem_phy.io.phy_id  := io.port.phy_id
+  gem_phy.io.phy_ad  := io.port.phy_ad
+  gem_phy.io.status  := io.port.status
+  gem_phy.io.mpe     := io.ctl.in.NCR(4)
+  gem_phy.io.man_di  := io.ctl.in.MAN
+  io.man_en          := gem_phy.io.man_en
+  io.man_do          := gem_phy.io.man_do
 
   //----------------------------------------------------------------------------
   // TX Channel
   //----------------------------------------------------------------------------
-  val gem_txd = Module(new LiteGEMTxD(beatBytes * 8))
-  gem_txd.io.gtx_clk := io.port.gtx_clk
-  io.port.tx_clk     := gem_txd.io.tx_clk
-  io.port.tx_en      := gem_txd.io.tx_en
-  io.port.tx_er      := gem_txd.io.tx_er
-  io.port.txd        := gem_txd.io.txd
+  val gem_txq = Module(new LiteGEMTxQue(beatBytes * 8))
+  gem_txq.io.gtx_clk := io.port.gtx_clk
+  io.port.tx_clk     := gem_txq.io.tx_clk
+  io.port.tx_en      := gem_txq.io.tx_en
+  io.port.tx_er      := gem_txq.io.tx_er
+  io.port.txd        := gem_txq.io.txd
 
-  gem_txd.io.txq_ad  := io.ctl.in.TBQPH ## io.ctl.in.TBQP
-  gem_txd.io.txq_en  := io.ctl.in.NCR(3) && io.ctl.in.NCR(9) // TE && TSTART
+  gem_txq.io.txq_ad  := io.ctl.in.TBQPH ## io.ctl.in.TBQP
+  gem_txq.io.txq_en  := io.ctl.in.NCR(3) && io.ctl.in.NCR(9) // TE && TSTART
   
   io.ncr_en := 0.B
   io.ncr_do := 0.U
-  when (gem_txd.io.txq_ok) {
+  when (gem_txq.io.txq_ok) {
     io.ncr_do := io.ctl.in.NCR.bitSet(9.U, 0.B) // Started, TSTART reset to false
     io.ncr_en := 1.B
   }
 
   //----------------------------------------------------------------------------
+  // RX Channel
+  //----------------------------------------------------------------------------
+  val gem_rxq = Module(new LiteGEMRxQue(beatBytes * 8))
+  gem_rxq.io.rx_clk := io.port.rx_clk
+  gem_rxq.io.rx_dv  := io.port.rx_dv
+  gem_rxq.io.rx_er  := io.port.rx_er
+  gem_rxq.io.rxd    := io.port.rxd
+
+  gem_rxq.io.rxq_ad  := io.ctl.in.RBQPH ## io.ctl.in.RBQP
+  gem_rxq.io.rxq_en  := io.ctl.in.NCR(2) // RE
+ 
+  //----------------------------------------------------------------------------
   // DMA Mux
   //----------------------------------------------------------------------------
-  val gem_dma = Module(new LiteDMA(bundle, 1))
+  val gem_dma = Module(new LiteDMA(bundle, 2))
 
-  gem_dma.io.dma_do(0) <> gem_txd.io.dma_di
-  gem_dma.io.dma_di(0) <> gem_txd.io.dma_do
-  gem_dma.io.dma_ad(0) := gem_txd.io.dma_ad
-  gem_dma.io.dma_sz(0) := gem_txd.io.dma_sz
-  gem_dma.io.dma_we(0) := gem_txd.io.dma_we
+  gem_dma.io.dma_do(0) <> gem_txq.io.dma_di
+  gem_dma.io.dma_di(0) <> gem_txq.io.dma_do
+  gem_dma.io.dma_ad(0) := gem_txq.io.dma_ad
+  gem_dma.io.dma_sz(0) := gem_txq.io.dma_sz
+  gem_dma.io.dma_we(0) := gem_txq.io.dma_we
+
+  gem_dma.io.dma_do(1) <> gem_rxq.io.dma_di
+  gem_dma.io.dma_di(1) <> gem_rxq.io.dma_do
+  gem_dma.io.dma_ad(1) := gem_rxq.io.dma_ad
+  gem_dma.io.dma_sz(1) := gem_rxq.io.dma_sz
+  gem_dma.io.dma_we(1) := gem_rxq.io.dma_we
 
   io.dma_a <> gem_dma.io.dma_a
   io.dma_b <> gem_dma.io.dma_b
@@ -381,7 +399,7 @@ class LiteGEMAdapter(beatBytes: Int, bundle: TLBundleParameters) extends Module 
   io.dma_e <> gem_dma.io.dma_e
 }
 
-class LiteGEMMan extends Module {
+class LiteGEMPhyMan extends Module {
   val io = IO(new Bundle {
     val phy_id = Input(UInt(32.W))
     val phy_ad = Input(UInt(5.W))
@@ -432,7 +450,7 @@ class LiteGEMMan extends Module {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-class LiteGEMTxD(wData: Int, txqNum: Int = 16, daw64: Bool = 0.B) extends Module {
+class LiteGEMTxQue(wData: Int, txqNum: Int = 16, daw64: Bool = 0.B) extends Module {
   val io = IO(new Bundle{
     val gtx_clk = Input (Clock())
     val tx_clk  = Output(Clock())
@@ -480,14 +498,16 @@ class LiteGEMTxD(wData: Int, txqNum: Int = 16, daw64: Bool = 0.B) extends Module
   val maxReqL = 64 // TL-D Max Burst Size
   val wReqLen = log2Ceil(maxReqL)
   val pkt_tot = 0.U(1.W) ## dsc_ctl(11, 0)
+  val pkt_adr = RegInit(0.U(32.W))
+  val pkt_gap = RegInit(0.U(4.W))
+
   val req_ptr = RegInit(maxReqL.U(12.W))
   val rsp_ptr = RegInit(maxReqL.U(12.W))
   val req_rem = pkt_tot - req_ptr
   val rsp_rem = pkt_tot - rsp_ptr
   val req_eop = req_rem(12)
   val rsp_eop = rsp_rem(12)
-  val pkt_adr = RegInit(0.U(32.W))
-  val pkt_gap = RegInit(0.U(4.W))
+
   dontTouch(pkt_tot)
   dontTouch(req_rem)
   dontTouch(rsp_rem)
@@ -521,7 +541,7 @@ class LiteGEMTxD(wData: Int, txqNum: Int = 16, daw64: Bool = 0.B) extends Module
         pkt_adr := dsc_nxt(31, 0)
         dsc_ptr := 0.U
         txq_ren := 0.B
-        state   := Mux(dsc_nxt(63), s_idle, s_req2)
+        state   := Mux(dsc_nxt(63), s_idle, s_req2) // TX_USED (Bit-31)
       }
     }
     is (s_req2) {
@@ -695,6 +715,7 @@ class LiteGEMTxFCS extends Module {
   val eth_out = WireDefault(0.B)
   val eth_fcs = WireDefault(0.B)
   val fcs_cnt = RegInit(0.U(2.W))
+
   switch (state) {
     is (s_idle) {
       when (eth_pos) {
@@ -790,3 +811,236 @@ class LiteGEMTxFCS extends Module {
   }
   dontTouch(eth_fcs)
 }
+
+////////////////////////////////////////////////////////////////////////////////
+class LiteGEMRxQue(wData: Int, rxqNum: Int = 16, daw64: Bool = 0.B) extends Module {
+  val io = IO(new Bundle{
+    val rx_clk  = Input (Clock())
+    val rxd     = Input (UInt(8.W))
+    val rx_dv   = Input (Bool())
+    val rx_er   = Input (Bool())
+
+    val rxq_ad  = Input (UInt(64.W))
+    val rxq_en  = Input (Bool())
+
+    val dma_we  = Output(Bool())
+    val dma_ad  = Output(UInt(64.W))
+    val dma_sz  = Output(UInt(4.W))
+    val dma_do  = PacketIO(UInt(wData.W))
+    val dma_di  = Flipped(PacketIO(UInt(wData.W))) 
+  })
+
+  val fifo = Module(new PacketQueue(PacketIO(UInt(8.W), emp=true), PacketIO(UInt(wData.W), emp=true)))
+
+  fifo.io.enq_clk := io.rx_clk
+  fifo.io.deq_clk := clock
+ 
+  withClock(io.rx_clk) {
+    val s_idle :: s_init :: s_data :: s_csum :: s_wait :: Nil = Enum(5)
+    val rx_act = RegInit(s_idle)
+
+    fifo.io.enq.valid := 0.B
+    fifo.io.enq.data  := 0.U
+    fifo.io.enq.last  := 0.B
+    fifo.io.enq.empty := 0.U
+
+    val buffer = RegInit(0.U(64.W))
+    val rx_cnt = RegInit(0.U(16.W))
+    val fc_cnt = RegInit(0.U( 2.W))
+
+    when (io.rx_dv) {
+       buffer := Cat(io.rxd, buffer(63, 8))
+       rx_cnt := Mux(rx_act === s_idle, 0.U, rx_cnt + 1.U)
+    }
+
+    switch (rx_act) {
+      is (s_idle) {
+        when (io.rx_dv && io.rxd === 0xd5.U && buffer(63, 8) === "h55555555555555".U) {
+          rx_act := s_init
+        }
+      }
+      is (s_init) {
+        when (rx_cnt === 4.U) {
+          rx_act := s_data
+        }
+      }
+      is (s_data) {
+        when (io.rx_dv) {
+          fifo.io.enq.valid := 1.B
+          fifo.io.enq.data  := buffer(31, 24)
+        }.otherwise {
+          fifo.io.enq.valid := 1.B
+          fc_cnt := 3.U
+          rx_act := s_csum
+        }
+      }
+      is (s_csum) {
+        when (fc_cnt =/= 0.U) {
+          fifo.io.enq.valid := 1.B
+          fifo.io.enq.data  := buffer(31, 24)
+          fifo.io.enq.last  := fc_cnt === 1.U
+          fc_cnt := fc_cnt - 1.U
+        }.otherwise {
+          rx_cnt := 0.U
+          rx_act := s_idle
+        }
+      }
+    }
+  }
+
+  withClock(clock) {
+    val wRxDsc = 16
+
+    val s_idle :: s_req1 :: s_rcv1 :: s_req2 :: s_pads :: s_rcv2 :: s_req3 :: s_rcv3 :: Nil = Enum(8)
+    val state = RegInit(s_idle)
+    val rxq_ptr = RegInit(0.U(log2Ceil(rxqNum * wRxDsc).W))
+    val rxq_ren = RegInit(0.B)
+    val rxq_fwd = WireDefault(0.B)
+ 
+    val wDscMem = ((wData + 127) / wData) * wData
+    val dsc_mem = RegInit(0.U(wDscMem.W))
+    val dsc_adr = dsc_mem(32, 0)
+    val dsc_ctl = dsc_mem(63,32)
+    val dsc_ptr = RegInit(0.U(log2Ceil(wDscMem).W))
+    val dsc_nxt = dsc_mem | (io.dma_di.data << dsc_ptr)
+
+    val maxReqL = 64 // TL-D Max Burst Size
+    val wReqLen = log2Ceil(maxReqL)
+    val pkt_adr = RegInit(0.U(32.W))
+    val req_ptr = RegInit(0.U(12.W))
+    val rsp_ptr = RegInit(0.U(12.W))
+    val frg_ptr = RegInit(0.U(12.W))
+    val frg_eop = frg_ptr === (maxReqL - wData / 8).U
+
+    dontTouch(frg_ptr)
+    dontTouch(frg_eop)
+
+    io.dma_do.valid := 0.B
+    io.dma_do.data  := 0.U
+    io.dma_do.last  := 0.B
+    io.dma_ad       := 0.U
+    io.dma_sz       := 0.U
+    io.dma_we       := 0.B
+ 
+    switch (state) {
+      is (s_idle) {
+        state := Mux(io.rxq_en, s_req1, s_idle)
+      }
+      is (s_req1) {
+        io.dma_do.valid := 1.B
+        io.dma_do.last  := 1.B
+        io.dma_do.data  := 0.U
+        io.dma_we       := 0.B
+        io.dma_sz       := Mux(daw64, 4.U, 3.U)
+        io.dma_ad       := io.rxq_ad + rxq_ptr
+        rxq_ren         := 1.B
+        when (io.dma_do.ready) {
+          state   := s_rcv1
+          dsc_mem := 0.U
+        }
+      }
+      is (s_rcv1) {
+        when (io.dma_di.fire && dsc_ptr =/= wDscMem.U) {
+          dsc_ptr := dsc_ptr + wData.U
+          dsc_mem := dsc_nxt //dsc_mem | (io.dma_di.data << dsc_ptr)
+        }
+        when (io.dma_di.fire && io.dma_di.last) {
+          pkt_adr := dsc_nxt(31, 0)
+          dsc_ptr := 0.U
+          rxq_ren := 0.B
+          state   := Mux(dsc_nxt(0), s_idle, s_req2) // RX_USED
+        }
+      }
+      is (s_req2) {
+        io.dma_do.valid := fifo.io.deq.valid
+        io.dma_do.data  := fifo.io.deq.data
+        io.dma_do.last  := frg_eop
+        io.dma_we       := 1.B
+        io.dma_sz       := wReqLen.U
+        io.dma_ad       := pkt_adr
+        rxq_ren         := 1.B
+        rxq_fwd         := 1.B
+        when (io.dma_do.ready) {
+          frg_ptr := frg_ptr + (wData / 8).U
+          when (frg_eop) {
+            pkt_adr := pkt_adr + maxReqL.U
+            req_ptr := req_ptr + maxReqL.U
+            frg_ptr := 0.U
+          }
+          when (fifo.io.deq.last) {
+            state := Mux(frg_eop, s_rcv2, s_pads)
+          }
+        }
+        when (io.dma_di.fire && io.dma_di.last) {
+          rsp_ptr := rsp_ptr + maxReqL.U
+        }
+      }
+      is (s_pads) {
+        io.dma_do.valid := 1.B
+        io.dma_do.data  := 0.U
+        io.dma_do.last  := frg_eop
+        io.dma_we       := 1.B
+        io.dma_sz       := wReqLen.U
+        io.dma_ad       := pkt_adr
+        rxq_ren         := 1.B
+
+        when (io.dma_do.ready) {
+          frg_ptr := frg_ptr + (wData / 8).U
+          when (frg_eop) {
+            pkt_adr := pkt_adr + maxReqL.U
+            req_ptr := req_ptr + maxReqL.U
+            frg_ptr := 0.U
+            state := s_rcv2
+          }
+        }
+        when (io.dma_di.fire && io.dma_di.last) {
+          rsp_ptr := rsp_ptr + maxReqL.U
+        }
+      }
+      is (s_rcv2) {
+        when (io.dma_di.fire && io.dma_di.last) {
+          when (rsp_ptr + maxReqL.U === req_ptr) {
+            val out_adr = Cat(dsc_mem(31,  1), 1.B)
+            val out_ctl = Cat(dsc_mem(63, 44) | 0xC.U, req_ptr(11, 0)) 
+            dsc_mem := Cat(out_ctl, out_adr)
+            req_ptr := 0.U
+            rsp_ptr := 0.U
+            state   := s_req3
+          }.otherwise {
+            rsp_ptr := rsp_ptr + maxReqL.U
+          }
+        }
+      }
+      is (s_req3) {
+        // DMA Req for desc write back 
+        io.dma_do.valid := 1.B
+        io.dma_do.last  := (wData >= 64).B || (dsc_ptr === 64.U)
+        io.dma_do.data  := dsc_mem >> dsc_ptr
+        io.dma_we       := 1.B
+        io.dma_sz       := 3.U // 64B
+        io.dma_ad       := io.rxq_ad + rxq_ptr
+        // DMA Req Done
+        when (io.dma_do.ready) {
+          dsc_ptr := dsc_ptr + wData.U
+          when (dsc_ptr === 64.U || (wData >= 64).B) {
+            dsc_ptr := 0.U
+            state   := s_rcv3
+            rxq_ren := 1.B
+          }
+        }
+      }
+      is (s_rcv3) {
+        // DMA Rsp for desc write back
+        when (io.dma_di.fire && io.dma_di.last) {
+          rxq_ptr := Mux(dsc_mem(1), 0.U, rxq_ptr + wRxDsc.U) // RX_WRAP
+          rxq_ren := 0.B
+          state   := s_req1
+        }
+      }
+    }
+
+    fifo.io.deq.ready := rxq_fwd && io.dma_do.ready
+    io.dma_di.ready   := rxq_ren
+  }
+}
+ 
