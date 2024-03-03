@@ -163,3 +163,13 @@ make
 make install
 popd
 
+#-------------------------------------------------------------------------------
+# tftpboot
+apt-get install u-boot-tools
+
+nmcli d set enxa0cec8f6bbb8 managed off
+ip link set enxa0cec8f6bbb8 up
+ip addr add enxa0cec8f6bbb8 10.0.0.1/24
+
+dnsmasq -d -C dhcp.conf -i enxa0cec8f6bbb8
+

@@ -130,24 +130,21 @@ class PacketQueue[T1 <: Data, T2 <: Data, T3 <: Data] (
   // Enqueue/Dequeue Packet MetaData
   //----------------------------------------------------------------------------
   if (io.enq.metaType != DontCare) {
-    val packets = Reg(Vec(count, io.enq.metaType))
+    val packets = Mem(count, io.enq.metaType.asUInt)
  
     withClock (enq_clk) {
       val enq_sop = RegInit(1.B)
       when (io.enq.fire) { enq_sop := io.enq.last }
-      when (io.enq.fire && enq_sop) {
-        packets(pkt_hdr(wPktP - 1, 0)) := io.enq.meta
+      when (io.enq.fire) {
+        packets.write(pkt_hdr(wPktP - 1, 0), io.enq.meta.asUInt, enq_clk)
       }
     }
 
     withClock (deq_clk) {
       val deq_eop = WireDefault(io.deq.fire && io.deq.last)
-      val deq_sop = RegInit(0.B)
-      val deq_out = (deq_eop || deq_sop && !io.deq.valid) && !pkt_emp
+      val deq_sop = RegInit(1.B)
+      io.deq.meta := Mux(io.deq.valid, packets.read(pkt_end(wPktP - 1, 0), deq_clk), 0.U)
       when (io.deq.fire) { deq_sop := io.deq.last }
-      when (deq_out) {
-        io.deq.meta := packets(pkt_end(wPktP - 1, 0))
-      }
     }
   }
  

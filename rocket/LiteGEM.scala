@@ -431,7 +431,7 @@ class LiteGEMPhyMan extends Module {
   io.man_do := man_do
   io.man_en := man_en
 
-  regs( 0) := "b0000_0000_1010_0000".U
+  regs( 0) := "b0000_0001_0100_0000".U
   regs( 1) := Cat(Seq("b0000_0000_0010_0".U, io.status, 0.U(2.W)))
   regs( 2) := io.phy_id(31,16) // OUI MSB
   regs( 3) := io.phy_id(15, 0) // OUI LSB, Model/Rev
@@ -830,14 +830,16 @@ class LiteGEMRxQue(wData: Int, rxqNum: Int = 16, daw64: Bool = 0.B) extends Modu
     val dma_di  = Flipped(PacketIO(UInt(wData.W))) 
   })
 
-  val fifo = Module(new PacketQueue(PacketIO(UInt(8.W), emp=true), PacketIO(UInt(wData.W), emp=true)))
+  val fifo = Module(new PacketQueue(
+    PacketIO(UInt(8.W), UInt(17.W), emp=true),
+    PacketIO(UInt(wData.W), UInt(17.W), emp=true)))
 
   fifo.io.enq_clk := io.rx_clk
   fifo.io.deq_clk := clock
  
   withClock(io.rx_clk) {
-    val s_idle :: s_init :: s_data :: s_csum :: s_wait :: Nil = Enum(5)
-    val rx_act = RegInit(s_idle)
+    val s_idle :: s_init :: s_data :: s_skip :: s_csum :: s_wait :: Nil = Enum(6)
+    val rx_mod = RegInit(s_idle)
 
     fifo.io.enq.valid := 0.B
     fifo.io.enq.data  := 0.U
@@ -846,43 +848,58 @@ class LiteGEMRxQue(wData: Int, rxqNum: Int = 16, daw64: Bool = 0.B) extends Modu
 
     val buffer = RegInit(0.U(64.W))
     val rx_cnt = RegInit(0.U(16.W))
-    val fc_cnt = RegInit(0.U( 2.W))
+    val fc_cnt = RegInit(0.U( 8.W))
+    val rx_err = WireDefault(0.B)
 
+    fifo.io.enq.meta := Cat(rx_err, rx_cnt)
     when (io.rx_dv) {
        buffer := Cat(io.rxd, buffer(63, 8))
-       rx_cnt := Mux(rx_act === s_idle, 0.U, rx_cnt + 1.U)
+       rx_cnt := Mux(rx_mod === s_idle, 0.U, rx_cnt + 1.U)
     }
 
-    switch (rx_act) {
+    switch (rx_mod) {
       is (s_idle) {
         when (io.rx_dv && io.rxd === 0xd5.U && buffer(63, 8) === "h55555555555555".U) {
-          rx_act := s_init
+          rx_mod := s_init
         }
       }
       is (s_init) {
-        when (rx_cnt === 4.U) {
-          rx_act := s_data
+        when (rx_cnt === 3.U) {
+          rx_mod := s_data
         }
       }
       is (s_data) {
+        fifo.io.enq.valid := 1.B
+        fifo.io.enq.data  := buffer(39, 32)
         when (io.rx_dv) {
-          fifo.io.enq.valid := 1.B
-          fifo.io.enq.data  := buffer(31, 24)
+          when (rx_mod >= 0xFFF.U) {
+            fifo.io.enq.valid := 1.B
+            fifo.io.enq.last  := 1.B
+            rx_mod := s_skip
+            rx_err := 1.B
+          }
         }.otherwise {
-          fifo.io.enq.valid := 1.B
-          fc_cnt := 3.U
-          rx_act := s_csum
+          rx_mod := s_csum
+        }
+      }
+      is (s_skip) {
+        fifo.io.enq.valid := 0.B
+        fifo.io.enq.last  := 0.B
+        fifo.io.enq.data  := 0.U
+        when (!io.rx_dv) {
+          rx_mod := s_idle
         }
       }
       is (s_csum) {
-        when (fc_cnt =/= 0.U) {
-          fifo.io.enq.valid := 1.B
-          fifo.io.enq.data  := buffer(31, 24)
-          fifo.io.enq.last  := fc_cnt === 1.U
-          fc_cnt := fc_cnt - 1.U
-        }.otherwise {
+        val fc_eop = fc_cnt === 16.U
+        fifo.io.enq.valid := 1.B
+        fifo.io.enq.data  := buffer(63, 40) >> fc_cnt
+        fifo.io.enq.last  := fc_eop
+        fc_cnt := fc_cnt + 8.U
+        when (fifo.io.enq.fire && fc_eop) {
+          rx_mod := s_idle
           rx_cnt := 0.U
-          rx_act := s_idle
+          fc_cnt := 0.U
         }
       }
     }
@@ -911,6 +928,7 @@ class LiteGEMRxQue(wData: Int, rxqNum: Int = 16, daw64: Bool = 0.B) extends Modu
     val rsp_ptr = RegInit(0.U(12.W))
     val frg_ptr = RegInit(0.U(12.W))
     val frg_eop = frg_ptr === (maxReqL - wData / 8).U
+    val eth_tot = RegInit(0.U(16.W))
 
     dontTouch(frg_ptr)
     dontTouch(frg_eop)
@@ -969,6 +987,7 @@ class LiteGEMRxQue(wData: Int, rxqNum: Int = 16, daw64: Bool = 0.B) extends Modu
           }
           when (fifo.io.deq.last) {
             state := Mux(frg_eop, s_rcv2, s_pads)
+            eth_tot := fifo.io.deq.meta.asUInt(11, 0)
           }
         }
         when (io.dma_di.fire && io.dma_di.last) {
@@ -1001,7 +1020,7 @@ class LiteGEMRxQue(wData: Int, rxqNum: Int = 16, daw64: Bool = 0.B) extends Modu
         when (io.dma_di.fire && io.dma_di.last) {
           when (rsp_ptr + maxReqL.U === req_ptr) {
             val out_adr = Cat(dsc_mem(31,  1), 1.B)
-            val out_ctl = Cat(dsc_mem(63, 44) | 0xC.U, req_ptr(11, 0)) 
+            val out_ctl = Cat(dsc_mem(63, 44) | 0xC.U, eth_tot(11, 0)) //req_ptr(11, 0)) 
             dsc_mem := Cat(out_ctl, out_adr)
             req_ptr := 0.U
             rsp_ptr := 0.U
