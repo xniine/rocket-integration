@@ -51,6 +51,18 @@ class RocketSystem(implicit p: Parameters) extends RocketSubsystem
       }))
     }
   } */
+  val reservedMemory = new DeviceSnippet {
+    def describe(): Description = {
+      Description("reserved-memory", Map(
+        "#address-cells" -> Seq(ResourceInt(1)),
+        "#size-cells" -> Seq(ResourceInt(1)),
+        "ranges" -> Seq[ResourceValue](),
+        "opensbi@80000000" -> Seq(ResourceMap(Map(
+          "reg" -> Seq(ResourceInt(0x80000000L), ResourceInt(0x200000L))
+        )))
+      ))
+    }
+  }
   ResourceBinding {
     //Resource(chosen, "tick-timer").bind(ResourceAlias(tickTimer.label))
     //Resource(chosen, "tick-timer").bind(ResourceAlias(clintOpt.head.device.label))
@@ -74,7 +86,7 @@ class WithExtRocketConfig extends Config((site, here, up) => {
   case PeripheryLiteGEMKey  => Seq(LiteGEMParams (0x10014000))
   case PeripheryLiteTTCKey  => Seq(LiteTTCParams (0x10012000))
   case PeripherySPIFlashKey => Seq(SPIFlashParams(0x1001F000, 0x20000000, defaultSampleDel=0))
-  case PeripheryUARTKey     => Seq(UARTParams    (0x10010000))
+  case PeripheryUARTKey     => Seq(UARTParams    (0x10010000, initBaudRate = BigInt(115200)))
 })
 
 object RocketSystem {

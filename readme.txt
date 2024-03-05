@@ -164,6 +164,34 @@ make install
 popd
 
 #-------------------------------------------------------------------------------
+# BusyBox & GLibc
+
+# wget http://busybox.net/downloads/busybox-1.24.1.tar.bz2
+git clone https://github.com/mirror/busybox
+cd busybox
+make menuconfig
+make install
+
+rsync -avh ../toolchain/riscv/sysroot/* ./_install/
+mkdir -p _install/etc/init.d
+cat << EOF > _install/etc/init.d/rcS
+#!bin/sh
+mount -t proc none /proc
+mount -t sysfs none /sys
+mount -t tmpfs none /var
+mount -t tmpfs none /dev
+echo /sbin/mdev > /proc/sys/kernel/hotplug
+/sbin/mdev -s
+mkdir /var/log
+EOF
+chmod +x _install/etc/init.d/rcS
+
+cd _install
+find . -print0 | cpio --null -ov --format=newc | gzip -9 > ../initramfs.cpio.gz
+cd ..
+cd ..
+
+#-------------------------------------------------------------------------------
 # tftpboot
 apt-get install u-boot-tools
 

@@ -1,0 +1,45 @@
+/dts-v1/;
+
+/ {
+    description = "Boot Linux Kernel";
+    images {
+        kernel-1 {
+            description = "Kernel-1";
+            data = /incbin/("./Image");
+            type = "kernel";
+            arch = "riscv";
+            os = "linux";
+            load = <0x94100000>;
+            entry = <0x94100000>;
+            compression = "none";
+        };
+        ramdisk-1 {
+            description = "Ramdisk-1";
+            data = /incbin/("./initramfs.cpio.gz");
+            type = "ramdisk";
+            arch = "riscv";
+            os = "linux";
+            load = <0x96000000>;
+            entry = <0x96000000>;
+            compression = "none";
+        };
+        fdt-1 {
+            description = "FDT-1";
+            data = /incbin/("./fdt-1.dtb");
+            type = "flat_dt";
+            arch = "riscv";
+            compression = "none";
+            load = <0x94000000>;
+        };
+    };
+    configurations {                                                                                                        
+        default = "config-1";                                                                                               
+        config-1 {                                                                                                          
+             description = "Linux Config-1 (Default)";
+             kernel = "kernel-1";                                                                                            
+             ramdisk = "ramdisk-1";                                                                                          
+             fdt = "fdt-1";                                                                                                  
+        };
+    };   
+};
+

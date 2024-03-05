@@ -327,7 +327,7 @@ class LiteGEMAdapter(beatBytes: Int, bundle: TLBundleParameters) extends Module 
   })
 
   io.ctl.out         := 0.U.asTypeOf(io.ctl.out)
-  io.ctl.out.MID     := 20000.U
+  io.ctl.out.MID     := 0x20000.U
   io.ctl.out.NSR     := io.port.status ## 0.U(2.W)
   io.port.interrupts := 0.U
  
@@ -342,61 +342,64 @@ class LiteGEMAdapter(beatBytes: Int, bundle: TLBundleParameters) extends Module 
   gem_phy.io.man_di  := io.ctl.in.MAN
   io.man_en          := gem_phy.io.man_en
   io.man_do          := gem_phy.io.man_do
-
-  //----------------------------------------------------------------------------
-  // TX Channel
-  //----------------------------------------------------------------------------
-  val gem_txq = Module(new LiteGEMTxQue(beatBytes * 8))
-  gem_txq.io.gtx_clk := io.port.gtx_clk
-  io.port.tx_clk     := gem_txq.io.tx_clk
-  io.port.tx_en      := gem_txq.io.tx_en
-  io.port.tx_er      := gem_txq.io.tx_er
-  io.port.txd        := gem_txq.io.txd
-
-  gem_txq.io.txq_ad  := io.ctl.in.TBQPH ## io.ctl.in.TBQP
-  gem_txq.io.txq_en  := io.ctl.in.NCR(3) && io.ctl.in.NCR(9) // TE && TSTART
-  
-  io.ncr_en := 0.B
-  io.ncr_do := 0.U
-  when (gem_txq.io.txq_ok) {
-    io.ncr_do := io.ctl.in.NCR.bitSet(9.U, 0.B) // Started, TSTART reset to false
-    io.ncr_en := 1.B
-  }
-
-  //----------------------------------------------------------------------------
-  // RX Channel
-  //----------------------------------------------------------------------------
-  val gem_rxq = Module(new LiteGEMRxQue(beatBytes * 8))
-  gem_rxq.io.rx_clk := io.port.rx_clk
-  gem_rxq.io.rx_dv  := io.port.rx_dv
-  gem_rxq.io.rx_er  := io.port.rx_er
-  gem_rxq.io.rxd    := io.port.rxd
-
-  gem_rxq.io.rxq_ad  := io.ctl.in.RBQPH ## io.ctl.in.RBQP
-  gem_rxq.io.rxq_en  := io.ctl.in.NCR(2) // RE
  
   //----------------------------------------------------------------------------
   // DMA Mux
   //----------------------------------------------------------------------------
   val gem_dma = Module(new LiteDMA(bundle, 2))
-
-  gem_dma.io.dma_do(0) <> gem_txq.io.dma_di
-  gem_dma.io.dma_di(0) <> gem_txq.io.dma_do
-  gem_dma.io.dma_ad(0) := gem_txq.io.dma_ad
-  gem_dma.io.dma_sz(0) := gem_txq.io.dma_sz
-  gem_dma.io.dma_we(0) := gem_txq.io.dma_we
-
-  gem_dma.io.dma_do(1) <> gem_rxq.io.dma_di
-  gem_dma.io.dma_di(1) <> gem_rxq.io.dma_do
-  gem_dma.io.dma_ad(1) := gem_rxq.io.dma_ad
-  gem_dma.io.dma_sz(1) := gem_rxq.io.dma_sz
-  gem_dma.io.dma_we(1) := gem_rxq.io.dma_we
-
   io.dma_a <> gem_dma.io.dma_a
   io.dma_b <> gem_dma.io.dma_b
   io.dma_c <> gem_dma.io.dma_c
   io.dma_d <> gem_dma.io.dma_d
   io.dma_e <> gem_dma.io.dma_e
+
+  //----------------------------------------------------------------------------
+  // TX Channel
+  //----------------------------------------------------------------------------
+  withReset(reset.asBool || gem_phy.io.phy_rst) {
+    val gem_txq = Module(new LiteGEMTxQue(beatBytes * 8))
+    gem_txq.io.gtx_clk := io.port.gtx_clk
+    io.port.tx_clk     := gem_txq.io.tx_clk
+    io.port.tx_en      := gem_txq.io.tx_en
+    io.port.tx_er      := gem_txq.io.tx_er
+    io.port.txd        := gem_txq.io.txd
+
+    gem_txq.io.txq_ad  := io.ctl.in.TBQPH ## io.ctl.in.TBQP
+    gem_txq.io.txq_en  := io.ctl.in.NCR(3) && io.ctl.in.NCR(9) // TE && TSTART
+    
+    io.ncr_en := 0.B
+    io.ncr_do := 0.U
+    when (gem_txq.io.txq_ok) {
+      io.ncr_do := io.ctl.in.NCR.bitSet(9.U, 0.B) // Started, TSTART reset to false
+      io.ncr_en := 1.B
+    }
+
+    gem_dma.io.dma_do(0) <> gem_txq.io.dma_di
+    gem_dma.io.dma_di(0) <> gem_txq.io.dma_do
+    gem_dma.io.dma_ad(0) := gem_txq.io.dma_ad
+    gem_dma.io.dma_sz(0) := gem_txq.io.dma_sz
+    gem_dma.io.dma_we(0) := gem_txq.io.dma_we
+  }
+
+  //----------------------------------------------------------------------------
+  // RX Channel
+  //----------------------------------------------------------------------------
+  withReset(reset.asBool || gem_phy.io.phy_rst) {
+    val gem_rxq = Module(new LiteGEMRxQue(beatBytes * 8))
+    gem_rxq.io.rx_clk := io.port.rx_clk
+    gem_rxq.io.rx_dv  := io.port.rx_dv
+    gem_rxq.io.rx_er  := io.port.rx_er
+    gem_rxq.io.rxd    := io.port.rxd
+
+    gem_rxq.io.rxq_ad  := io.ctl.in.RBQPH ## io.ctl.in.RBQP
+    gem_rxq.io.rxq_en  := io.ctl.in.NCR(2) // RE
+    
+    gem_dma.io.dma_do(1) <> gem_rxq.io.dma_di
+    gem_dma.io.dma_di(1) <> gem_rxq.io.dma_do
+    gem_dma.io.dma_ad(1) := gem_rxq.io.dma_ad
+    gem_dma.io.dma_sz(1) := gem_rxq.io.dma_sz
+    gem_dma.io.dma_we(1) := gem_rxq.io.dma_we
+  }
 }
 
 class LiteGEMPhyMan extends Module {
@@ -408,6 +411,7 @@ class LiteGEMPhyMan extends Module {
     val man_di = Input(UInt(32.W))
     val man_do = Output(UInt(32.W))
     val man_en = Output(Bool())
+    val phy_rst = Output(Bool())
   })
   val man_di = Mux(io.mpe, io.man_di(15, 0), 0.U(16.W))
   val man_do = RegNext(0.U(16.W))
@@ -417,16 +421,22 @@ class LiteGEMPhyMan extends Module {
   val rw     = Mux(io.mpe, io.man_di(29,28), 0.U( 2.W))
   val phya   = Mux(io.mpe, io.man_di(27,23), 0.U( 5.W))
   val rega   = Mux(io.mpe, io.man_di(22,18), 0.U( 5.W))
+  val regs   = Wire(Vec(16, UInt(16.W)))
 
-  val regs = Wire(Vec(16, UInt(16.W)))
+  io.phy_rst := 0.B
   when (sof === 1.U && phya === io.phy_ad && !rega(4)) {
     when(rw === 2.U) { // read
       man_do := regs(rega)
       man_en := 1.B
-    } /*
+    } 
     when (rw === 1.U) { // write
-      regs(rega) := io.man_di(15,0)
-    }*/
+      //regs(rega) := io.man_di(15,0)
+      switch(rega) {
+        is (0.U) {
+          io.phy_rst := io.man_di(15)
+        }
+      }
+    }
   }
   io.man_do := man_do
   io.man_en := man_en
@@ -441,12 +451,12 @@ class LiteGEMPhyMan extends Module {
   regs( 7) := "b0000_0000_0000_0000".U // Empty
   regs( 8) := "b0000_0000_0000_0000".U // Empty
   regs( 9) := "b0000_0000_0000_0000".U // Empty
-  regs(10) := "b0000_0000_0000_0000".U // Empty
+  regs(10) := "b0011_1000_0000_0000".U // MII_STAT1000, 1000Base-T Full-Duplex
   regs(11) := "b0000_0000_0000_0000".U // Empty
   regs(12) := "b0000_0000_0000_0000".U // Empty
   regs(13) := "b0000_0000_0000_0000".U // Empty
   regs(14) := "b0000_0000_0000_0000".U // Empty
-  regs(15) := "b0000_0001_0000_0000".U // 1000Base-T Full-Duplex
+  regs(15) := "b0000_0000_0000_0000".U // Empty
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -813,7 +823,7 @@ class LiteGEMTxFCS extends Module {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-class LiteGEMRxQue(wData: Int, rxqNum: Int = 16, daw64: Bool = 0.B) extends Module {
+class LiteGEMRxQue(wData: Int, rxqNum: Int = 32, daw64: Bool = 0.B) extends Module {
   val io = IO(new Bundle{
     val rx_clk  = Input (Clock())
     val rxd     = Input (UInt(8.W))
