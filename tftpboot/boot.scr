@@ -1,7 +1,8 @@
 echo ===== Setting Environment =====
-setenv bootargs earlycon debug ignore_loglevel console=ttyS0,115200 root=/dev/ram rw
+setenv bootargs root=/dev/ram0 rw ramdisk_size=10240 rootfstype=ext4 clocksource=ttc_clocksource loglevel=8 console=ttyS0,115200 console=ttySIF0,115200
 echo ===== Loading Kernel =====
 tftp 90000000 /kernel.itb
+md 90000000 40
 iminfo
 echo ===== DONE! =====
 bootm

@@ -98,7 +98,7 @@ popd
 apt-get install gawk texiinfo libgmp-dev
 
 pushd riscv-gnu-toolchain
-./configure --prefix=$PWD/../riscv
+./configure --prefix=$PWD/../riscv --enable-multilib
 make
 make linux
 popd
@@ -140,7 +140,7 @@ cp ../u-boot.config .config
 # make menuconfig
 
 make CROSS_COMPILE=riscv64-unknown-linux-gnu- EXT_DTB=./build.dtb \
-EXTRA_CFLAGS="-march=rv64gczicsr_zifencei -fPIC -DLOG_DEBUG"
+EXTRA_CFLAGS="-march=rv64gc -fPIC -DLOG_DEBUG -DDEBUG"
 
 popd
 
@@ -164,7 +164,7 @@ make install
 popd
 
 #-------------------------------------------------------------------------------
-# BusyBox & GLibc
+# BusyBox
 
 # wget http://busybox.net/downloads/busybox-1.24.1.tar.bz2
 git clone https://github.com/mirror/busybox
@@ -172,22 +172,46 @@ cd busybox
 make menuconfig
 make install
 
-rsync -avh ../toolchain/riscv/sysroot/* ./_install/
-mkdir -p _install/etc/init.d
+#-------------------------------------------------------------------------------
+RootFs
+cd _install
+fakeroot
+
+mkdir -p dev proc sys
+mkdir -p etc/init.d
+mkdir -p var/log
+mkdir -p lib
+
 cat << EOF > _install/etc/init.d/rcS
 #!bin/sh
 mount -t proc none /proc
 mount -t sysfs none /sys
 mount -t tmpfs none /var
 mount -t tmpfs none /dev
-echo /sbin/mdev > /proc/sys/kernel/hotplug
-/sbin/mdev -s
-mkdir /var/log
+# echo /sbin/mdev > /proc/sys/kernel/hotplug
+# /sbin/mdev -s
+# mkdir /var/log
+mknod -m 622 /dev/console c 5 1
+mknod -m 666 /dev/null c 1 3
+mknod -m 666 /dev/zero c 1 5
+mknod -m 666 /dev/ptmx c 5 2
+mknod -m 666 /dev/tty c 5 0
+mknod -m 444 /dev/random c 1 8
+mknod -m 444 /dev/urandom c 1 9
+ln -sf /dev/null /dev/tty2
+ln -sf /dev/null /dev/tty3
+ln -sf /dev/null /dev/tty4
 EOF
-chmod +x _install/etc/init.d/rcS
+chmod +x etc/init.d/rcS
 
-cd _install
-find . -print0 | cpio --null -ov --format=newc | gzip -9 > ../initramfs.cpio.gz
+# find . -print0 | cpio --null -ov --format=newc | gzip -9 > ../initramfs.cpio.gz
+genext2fs -N 4096 -B 1024 -b 100000 -d _install ramdisk.image
+tune2fs ramdisk.image -i 0
+chmod a+rw ramdisk.image
+e2fsck -p ramdisk.image 
+gzip -9 -k ramdisk.image
+
+exit
 cd ..
 cd ..
 

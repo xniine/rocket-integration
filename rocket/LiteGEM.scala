@@ -164,7 +164,6 @@ class LiteGEMOut extends Bundle {
 }
 
 class LiteGEMIO extends Bundle {
-  val interrupts = Output(UInt(1.W))
   val gtx_clk    = Input (Clock())
   val tx_clk     = Output(Clock())
   val rx_clk     = Input (Clock())
@@ -191,6 +190,7 @@ class LiteGEM(busWidthBytes: Int, c: LiteGEMParams)(implicit p: Parameters)
   with HasTLControlRegMap {
 
   override def extraResources(resources: ResourceBindings) = Map[String, Seq[ResourceValue]](
+    //"clock-names" -> Seq(ResourceString("pclk")),
     "mac-address" -> Seq(0, 0, 0, 0, 0, 0).map(ResourceInt(_)),
     "phy-mode" -> Seq(ResourceString("gmii")))
 
@@ -271,6 +271,7 @@ class LiteGEM(busWidthBytes: Int, c: LiteGEMParams)(implicit p: Parameters)
     regmap(mapping:_*)
 
     val eth = Module(new LiteGEMAdapter(beatBytes, dmaEdge.bundle))
+    interrupts(0) := eth.io.interrupt
     output := eth.io.ctl.out
     eth.io.ctl.in := inputs
 
@@ -313,6 +314,7 @@ class LiteGEMCtlIO extends Bundle {
 
 class LiteGEMAdapter(beatBytes: Int, bundle: TLBundleParameters) extends Module {
   val io = IO(new Bundle {
+    val interrupt = Output(Bool())
     val port = new LiteGEMIO
     val ctl = new LiteGEMCtlIO
     val dma_a = Decoupled(new TLBundleA(bundle))
@@ -329,7 +331,7 @@ class LiteGEMAdapter(beatBytes: Int, bundle: TLBundleParameters) extends Module 
   io.ctl.out         := 0.U.asTypeOf(io.ctl.out)
   io.ctl.out.MID     := 0x20000.U
   io.ctl.out.NSR     := io.port.status ## 0.U(2.W)
-  io.port.interrupts := 0.U
+  io.interrupt       := 0.B
  
   //----------------------------------------------------------------------------
   // Management Port (MDIO)
@@ -503,7 +505,7 @@ class LiteGEMTxQue(wData: Int, txqNum: Int = 16, daw64: Bool = 0.B) extends Modu
   val dsc_adr = dsc_mem(32, 0)
   val dsc_ctl = dsc_mem(63,32)
   val dsc_ptr = RegInit(0.U(log2Ceil(wDscMem).W))
-  val dsc_nxt = dsc_mem | (io.dma_di.data << dsc_ptr)
+  val dsc_nxt = dsc_mem | (io.dma_di.data << dsc_ptr)(63, 0)
 
   val maxReqL = 64 // TL-D Max Burst Size
   val wReqLen = log2Ceil(maxReqL)
@@ -511,8 +513,8 @@ class LiteGEMTxQue(wData: Int, txqNum: Int = 16, daw64: Bool = 0.B) extends Modu
   val pkt_adr = RegInit(0.U(32.W))
   val pkt_gap = RegInit(0.U(4.W))
 
-  val req_ptr = RegInit(maxReqL.U(12.W))
-  val rsp_ptr = RegInit(maxReqL.U(12.W))
+  val req_ptr = RegInit((maxReqL + 1).U(12.W))
+  val rsp_ptr = RegInit((maxReqL + 1).U(12.W))
   val req_rem = pkt_tot - req_ptr
   val rsp_rem = pkt_tot - rsp_ptr
   val req_eop = req_rem(12)
@@ -565,9 +567,8 @@ class LiteGEMTxQue(wData: Int, txqNum: Int = 16, daw64: Bool = 0.B) extends Modu
       when (io.dma_do.ready) {
         req_ptr := req_ptr + maxReqL.U
         pkt_adr := pkt_adr + maxReqL.U
-        //state   := s_rcv2
         when (req_eop) {
-          req_ptr := maxReqL.U
+          req_ptr := (maxReqL + 1).U
           state   := s_rcv2
         }
       }
@@ -578,10 +579,8 @@ class LiteGEMTxQue(wData: Int, txqNum: Int = 16, daw64: Bool = 0.B) extends Modu
     is (s_rcv2) {
       when (io.dma_di.fire && io.dma_di.last) {
         rsp_ptr := rsp_ptr + maxReqL.U
-        //state   := s_req2
         when (rsp_eop) {
-          //req_ptr := maxReqL.U
-          rsp_ptr := maxReqL.U
+          rsp_ptr := (maxReqL + 1).U
           state   := s_req3
           txq_fwd := 0.B
           dsc_mem := dsc_mem.bitSet(63.U, 1.B) // TX_USED (Bit-31)
@@ -616,6 +615,7 @@ class LiteGEMTxQue(wData: Int, txqNum: Int = 16, daw64: Bool = 0.B) extends Modu
     }
     is (s_wait) {
       pkt_gap := pkt_gap + 1.U
+      // Wait for some time, dont have to be 12CLK, But we use 12 here
       when (pkt_gap === 12.U) {
         pkt_gap := 0.U
         state   := s_req1
@@ -638,7 +638,6 @@ class LiteGEMTxQue(wData: Int, txqNum: Int = 16, daw64: Bool = 0.B) extends Modu
   }
   dontTouch(dsc_ctl)
   dontTouch(din_eop)
-  dontTouch(din_eop)
 
   //----------------------------------------------------------------------------
   val fifo = Module(new PacketQueue(PacketIO(UInt(wData.W), emp=true), PacketIO(UInt(8.W), emp=true)))
@@ -647,10 +646,12 @@ class LiteGEMTxQue(wData: Int, txqNum: Int = 16, daw64: Bool = 0.B) extends Modu
 
   val eth_eop = rsp_eop && dsc_ctl(15) // TX_LAST
   val eth_emp = RegInit(0.B)
-  when (io.dma_di.fire && io.dma_di.last) {
-    eth_emp := 0.B
-  }.elsewhen (eth_eop && din_eop) {
-    eth_emp := 1.B
+  when (io.dma_di.fire) {
+    when (io.dma_di.last) {
+      eth_emp := 0.B
+    }.elsewhen (eth_eop && din_eop) {
+      eth_emp := 1.B
+    }
   }
 
   io.dma_di.ready   := txq_fwd && fifo.io.enq.ready || txq_ren || eth_emp
@@ -663,21 +664,16 @@ class LiteGEMTxQue(wData: Int, txqNum: Int = 16, daw64: Bool = 0.B) extends Modu
     val txd_val = WireDefault(0.U(8.W))
     val txd_cnt = RegInit(0.U(4.W))
     val txd_ten = fifo.io.deq.valid
-    val txd_ipg = RegInit(0.U(4.W))
-    val txd_rdy = WireDefault(0.B)
+    val txd_act = WireDefault(0.B)
 
     fifo.io.deq.ready := 0.B
-    when (txd_ipg =/= 0.U) {
-      txd_ipg := txd_ipg - 1.U
-    }
     when (txd_cnt(3)) {
-      fifo.io.deq.ready := txd_rdy
+      fifo.io.deq.ready := txd_act
       txd_val := fifo.io.deq.data
       when (fifo.io.deq.fire && fifo.io.deq.last) {
         txd_cnt :=  0.U
-        txd_ipg := 12.U
       }
-    }.elsewhen (txd_ten) {
+    }.elsewhen (txd_ten && txd_act) {
       txd_val := Mux(txd_cnt === 7.U, 0xD5.U, 0x55.U)
       txd_cnt := txd_cnt + 1.U
     }
@@ -689,7 +685,7 @@ class LiteGEMTxQue(wData: Int, txqNum: Int = 16, daw64: Bool = 0.B) extends Modu
     txd_fcs.io.din_tx_er := 0.B
     txd_fcs.io.din_txd   := txd_val
 
-    txd_rdy  := txd_fcs.io.din_ready
+    txd_act  := !txd_fcs.io.din_hold
     io.tx_en := txd_fcs.io.out_tx_en
     io.tx_er := txd_fcs.io.out_tx_er
     io.txd   := txd_fcs.io.out_txd
@@ -701,34 +697,33 @@ class LiteGEMTxFCS extends Module {
     val din_tx_en = Input (Bool())
     val din_tx_er = Input (Bool())
     val din_txd   = Input (UInt(8.W))
-    val din_ready = Output(Bool())
+    val din_hold  = Output(Bool())
 
     val out_tx_en = Output(Bool())
     val out_tx_er = Output(Bool())
     val out_txd   = Output(UInt(8.W))
-
   })
 
-  val eth_ten = RegInit(0.B)
-  eth_ten := io.din_tx_en
-
-  val eth_pos = io.din_tx_en && !eth_ten
+  val eth_ten = RegNext(io.din_tx_en)
   val eth_neg = eth_ten && !io.din_tx_en
   val eth_cnt = RegInit(0.U(16.W))
   val pad_cnt = 0x43.U(17.W) - eth_cnt
   val eth_pad = WireDefault(0.B)
-  eth_cnt := Mux(io.din_tx_en || eth_pad, eth_cnt + 1.U, 0.U)
+  val eth_ipg = WireDefault(0.B)
 
-  val s_idle :: s_data :: s_pads :: s_csum :: Nil = Enum(4)
+  val s_idle :: s_data :: s_pads :: s_csum :: s_wait :: Nil = Enum(5)
   val state = RegInit(s_idle)
 
   val eth_out = WireDefault(0.B)
   val eth_fcs = WireDefault(0.B)
   val fcs_cnt = RegInit(0.U(2.W))
+  val ipg_cnt = RegInit(0.U(4.W))
+
+  eth_cnt := Mux(io.din_tx_en && eth_out || eth_pad, eth_cnt + 1.U, 0.U)
 
   switch (state) {
     is (s_idle) {
-      when (eth_pos) {
+      when (io.din_tx_en) {
         state   := s_data
         eth_out := 1.B
       }
@@ -761,13 +756,21 @@ class LiteGEMTxFCS extends Module {
       eth_fcs := 1.B
       fcs_cnt := fcs_cnt + 1.U
       when (fcs_cnt === 3.U) {
-        state   := s_idle
+        state   := s_wait
         fcs_cnt := 0.U
+      }
+    }
+    is (s_wait) {
+      eth_ipg := 1.B
+      ipg_cnt := ipg_cnt + 1.U
+      when (ipg_cnt === 11.U) {
+        state   := s_idle
+        ipg_cnt := 0.U
       }
     }
   }
 
-  io.din_ready := !(eth_pad || eth_fcs)
+  io.din_hold  := eth_pad || eth_fcs || eth_ipg
   io.out_tx_en := 0.B
   io.out_tx_er := 0.B
   io.out_txd   := 0.U
@@ -874,7 +877,9 @@ class LiteGEMRxQue(wData: Int, rxqNum: Int = 32, daw64: Bool = 0.B) extends Modu
         }
       }
       is (s_init) {
-        when (rx_cnt === 3.U) {
+        when (!io.rx_dv) { 
+          rx_mod := s_idle
+        }.elsewhen (rx_cnt === 3.U) {
           rx_mod := s_data
         }
       }

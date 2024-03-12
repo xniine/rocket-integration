@@ -50,7 +50,7 @@ class RocketSystem(implicit p: Parameters) extends RocketSubsystem
         "compatible" -> Seq(ResourceString("riscv,timer"))
       }))
     }
-  } */
+  }
   val reservedMemory = new DeviceSnippet {
     def describe(): Description = {
       Description("reserved-memory", Map(
@@ -58,11 +58,12 @@ class RocketSystem(implicit p: Parameters) extends RocketSubsystem
         "#size-cells" -> Seq(ResourceInt(1)),
         "ranges" -> Seq[ResourceValue](),
         "opensbi@80000000" -> Seq(ResourceMap(Map(
+          "no-map" -> Seq[ResourceValue](),
           "reg" -> Seq(ResourceInt(0x80000000L), ResourceInt(0x200000L))
         )))
       ))
     }
-  }
+  }*/
   ResourceBinding {
     //Resource(chosen, "tick-timer").bind(ResourceAlias(tickTimer.label))
     //Resource(chosen, "tick-timer").bind(ResourceAlias(clintOpt.head.device.label))

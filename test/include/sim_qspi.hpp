@@ -22,15 +22,18 @@ private:
     int  spi_cmd;
     int  spi_adr;
     int  spi_idx;
+    int  spi_sts;
 public:
     SimQSPI(int size) {
         mem = new unsigned char[size];
         mem_size = size;
+        memset(mem, 0xff, mem_size);
         spi_cmd  = 0;
         spi_adr  = 0;
         spi_out  = 0;
         spi_idx  = 0;
         spi_act  = false;
+        spi_sts  = 0;
     }
 
     ~SimQSPI() {
@@ -67,6 +70,7 @@ public:
             spi_adr = 0;
             return;
         }
+
         if (!posedge) {
             return;
         }
@@ -78,6 +82,12 @@ public:
                 spi_cmd = spi_cmd | 0x1;
             }
         }
+
+        if (spi_idx == 7) {
+            fprintf(stdout, "[%4.9f] spi cmd %02x\n",
+                    Verilated::time()/1e12, spi_cmd);
+        }
+
         if (spi_idx >= 7) {
             switch (spi_cmd) {
                 case 0x03: read_addr(1, 3); send_data(1, 3, 32); break; // Normal
@@ -95,12 +105,34 @@ public:
                 case 0xEC: read_addr(4, 4); send_data(4, 4, 22); break;
 
                 case 0x9F: send_id(); break;
+                case 0x01: read_st(); break;
+                case 0x05: send_st(); break;
+                case 0x06: break;
             }
         }
         spi_idx = spi_idx + 1;
-        if (spi_idx ==  8) {
-            fprintf(stdout, "[%4.9f] spi cmd %02x\n",
-                    Verilated::time()/1e12, spi_cmd);
+    }
+
+    void read_st() {
+        int idx = spi_idx - 7;
+        if (idx && idx <= 8) {
+            spi_sts = spi_sts << 1;
+            if (*this->oe0 && *this->o0) {
+                spi_sts = spi_sts | 0x01;
+            } 
+            fprintf(stdout, "[%4.9f] spi idx %2d, din %02x\n",
+                    Verilated::time()/1e12, idx, spi_sts & 0x1);
+        }
+    }
+
+    void send_st() {
+        int idx = spi_idx - 7;
+        int val = spi_sts >> (7 - idx);
+        spi_out = 0;
+        if (idx < 8) {
+            spi_out = 0x2 & (val << 1);
+            fprintf(stdout, "[%4.9f] spi idx %2d, out %02x\n",
+                    Verilated::time()/1e12, idx, spi_out);
         }
     }
 
@@ -117,9 +149,10 @@ public:
         if (idx < 24) {
             val = (pid >> ( 7 - idx % 8));
         }
-        spi_out = (val << 1) & 0x2;
+        spi_out = 0;
         if (idx < 24) {
-            fprintf(stdout, "[%4.9f] spi idx %3d, id %02x\n",
+            spi_out = 0x2 & (val << 1);
+            fprintf(stdout, "[%4.9f] spi idx %2d, out %02x\n",
                     Verilated::time()/1e12, idx, spi_out);
         }
     }

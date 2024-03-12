@@ -9,19 +9,25 @@
             type = "kernel";
             arch = "riscv";
             os = "linux";
-            load = <0x94100000>;
-            entry = <0x94100000>;
+            load = <0x94000000>;
+            entry = <0x94000000>;
             compression = "none";
+            hash-1 {
+                algo = "crc32";
+            };
         };
         ramdisk-1 {
             description = "Ramdisk-1";
-            data = /incbin/("./initramfs.cpio.gz");
+            data = /incbin/("./initrd.gz");
             type = "ramdisk";
             arch = "riscv";
             os = "linux";
             load = <0x96000000>;
             entry = <0x96000000>;
             compression = "none";
+            hash-1 {
+                algo = "crc32";
+            };
         };
         fdt-1 {
             description = "FDT-1";
@@ -29,7 +35,10 @@
             type = "flat_dt";
             arch = "riscv";
             compression = "none";
-            load = <0x94000000>;
+            load = <0x95F00000>;
+            hash-1 {
+                algo = "crc32";
+            };
         };
     };
     configurations {                                                                                                        
