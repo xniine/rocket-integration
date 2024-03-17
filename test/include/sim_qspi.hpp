@@ -24,10 +24,10 @@ private:
     int  spi_idx;
     int  spi_sts;
 public:
-    SimQSPI(int size) {
+    SimQSPI(int size, unsigned char fill = 0xff) {
         mem = new unsigned char[size];
         mem_size = size;
-        memset(mem, 0xff, mem_size);
+        memset(mem, fill, mem_size);
         spi_cmd  = 0;
         spi_adr  = 0;
         spi_out  = 0;

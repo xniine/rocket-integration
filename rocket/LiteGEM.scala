@@ -29,12 +29,25 @@ trait HasPeripheryLiteGEM { this: BaseSubsystem =>
       SynchronousCrossing(),
       SynchronousCrossing()).attachTo(this)
   }
+
+  val ethClk = LazyModule(new LiteGEMFixedCLK) 
+  eths.foreach { eth =>
+    eth.ethClockNode := ethClk.clockNode
+  }
+
+  val ethClkNode = ethClk.ioNode.makeSink()
   val ethNodes = eths.map(_.ioNode.makeSink())
+  ResourceBinding {
+    eths.foreach { eth =>
+      Resource(eth.device, "_clocks").bind(ResourceReference(ethClk.device.label))
+    }
+  }
 }
 
 trait HasPeripheryLiteGEMImp extends LazyModuleImp {
   val outer: HasPeripheryLiteGEM
   val eth = outer.ethNodes.zipWithIndex.map { case(n,i) => n.makeIO()(ValName(s"eth_$i")) }
+  val ethClock = outer.ethClkNode.makeIOs()(ValName(s"eth_clk"))
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -93,6 +106,29 @@ object LiteGEMDevice {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+class LiteGEMFixedCLK(implicit p: Parameters) extends LazyModule {
+  val device = new DeviceSnippet {                                                                                
+    def describe(): Description = {                                                                                       
+      Description("eth_clk", Map(                                                                                 
+        "#clock-cells" -> Seq(ResourceInt(0)),
+        "clock-output-names" -> Seq(ResourceString("ethernet_clk")),
+        "clock-frequency" -> Seq(ResourceInt(125000000L)),
+        "compatible" -> Seq(ResourceString("fixed-clock"))
+      ))                                                                                                                  
+    }
+  }
+  val clockNode = ClockSourceNode(Seq(ClockSourceParameters(give = Some(ClockParameters(freqMHz = 125)))))
+  val ioNode = BundleBridgeSource(() => new Bundle { val clock = Input(Clock()) } )
+
+  lazy val module = new LazyModuleImp(this) {
+    clockNode.out.foreach { case (bundle, _) => {
+      bundle.clock := ioNode.bundle.clock 
+      bundle.reset := 0.B
+    }}
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
 class LiteGEMIn extends Bundle {
   val NCR    = UInt(32.W) // 0x000, Network conftrol
                           //        [ 2] RE      - Receive enable
@@ -129,29 +165,8 @@ class LiteGEMIn extends Bundle {
                           //        [25+:3] DBWDEF - Data bus width default
   val DCFG6  = UInt(32.W) // 0x294, Design configuration register 6
                           //        [23+:1] DAW64 - DMA Address Width 64
-  
-  val TBQP1  = UInt(32.W) // 0x440, TX Q Base Address - Queue 1
-  val TBQP2  = UInt(32.W) // 0x444, TX Q Base Address - Queue 2
-  val TBQP3  = UInt(32.W) // 0x448, TX Q Base Address - Queue 3
-  val TBQP4  = UInt(32.W) // 0x44C, TX Q Base Address - Queue 4
-  val TBQP5  = UInt(32.W) // 0x450, TX Q Base Address - Queue 5
-  val TBQP6  = UInt(32.W) // 0x454, TX Q Base Address - Queue 6
-  val TBQP7  = UInt(32.W) // 0x458, TX Q Base Address - Queue 7
-
-  val RBQP1  = UInt(32.W) // 0x480, TX Q Base Address - Queue 1
-  val RBQP2  = UInt(32.W) // 0x484, TX Q Base Address - Queue 2
-  val RBQP3  = UInt(32.W) // 0x488, TX Q Base Address - Queue 3
-  val RBQP4  = UInt(32.W) // 0x48C, TX Q Base Address - Queue 4
-  val RBQP5  = UInt(32.W) // 0x490, TX Q Base Address - Queue 5
-  val RBQP6  = UInt(32.W) // 0x494, TX Q Base Address - Queue 6
-  val RBQP7  = UInt(32.W) // 0x498, TX Q Base Address - Queue 7
-  
-  val IER    = UInt(32.W) // 0x600, Interrupt Enable
-  val IER1   = UInt(32.W) // 0x604, Interrupt Enable
-  val IDR    = UInt(32.W) // 0x620, Interrupt Disable
-  val IDR1   = UInt(32.W) // 0x624, Interrupt Disable
-  val IMR    = UInt(32.W) // 0x640, Interrupt Mask
-  val IMR1   = UInt(32.W) // 0x644, Interrupt Mask
+  val IER    = UInt(32.W) // 0x028, Interrupt Enable
+  val IDR    = UInt(32.W) // 0x02C, Interrupt Disable
 }
 
 class LiteGEMOut extends Bundle {
@@ -161,10 +176,16 @@ class LiteGEMOut extends Bundle {
                           //        [ 2] IDLE
   val TSR    = UInt(32.W) // 0x014, Transmit status
                           //        [ 3] TGO - Transmit go
+  val ISR    = UInt(32.W) // 0x024, Interrupt Status
+                          //        [ 1] RCOMP - Receive Complete
+                          //        [ 2] RXUBR - RX used bit read
+                          //        [ 3] TXUBR - TX used bit read
+                          //        [ 7] TCOMP - Tramsmit Complete
+                          //        [10] ROVR  - Receive overrun
+  val IMR    = UInt(32.W) // 0x030, Interrupt Mask
 }
 
 class LiteGEMIO extends Bundle {
-  val gtx_clk    = Input (Clock())
   val tx_clk     = Output(Clock())
   val rx_clk     = Input (Clock())
   val rxd        = Input (UInt(8.W))
@@ -190,10 +211,17 @@ class LiteGEM(busWidthBytes: Int, c: LiteGEMParams)(implicit p: Parameters)
   with HasTLControlRegMap {
 
   override def extraResources(resources: ResourceBindings) = Map[String, Seq[ResourceValue]](
-    //"clock-names" -> Seq(ResourceString("pclk")),
+    "clocks" -> (resources("clocks") ++ resources("_clocks")).map(_.value),
+    "clock-names" -> Seq(ResourceString("hclk"), ResourceString("pclk")),
     "mac-address" -> Seq(0, 0, 0, 0, 0, 0).map(ResourceInt(_)),
-    "phy-mode" -> Seq(ResourceString("gmii")))
+    "phy-mode" -> Seq(ResourceString("gmii")),
+    "fixed-link" -> Seq(ResourceMap(Map(
+      "speed" -> Seq(ResourceInt(1000)),
+      "full-duplex" -> Seq()
+    )))
+  )
 
+  val ethClockNode = ClockSinkNode(Seq(ClockSinkParameters()))
   val dmaClockNode = ClockSinkNode(Seq(ClockSinkParameters()))
   val dmaNode = TLClientNode(Seq(TLMasterPortParameters.v1(
     Seq(TLMasterParameters.v1(
@@ -204,6 +232,7 @@ class LiteGEM(busWidthBytes: Int, c: LiteGEMParams)(implicit p: Parameters)
 
   def nInterrupts = 1
   lazy val module = new LazyModuleImp(this) {
+    val ethClock = ethClockNode.in.head._1.clock
     val dmaClock = dmaClockNode.in.head._1.clock
     val dmaReset = dmaClockNode.in.head._1.reset
     val dmaEdge = dmaNode.out.head._2
@@ -218,7 +247,10 @@ class LiteGEM(busWidthBytes: Int, c: LiteGEMParams)(implicit p: Parameters)
       init.RBQPH := 0x0.U
       init
     })
+    inputs.IDR := 0.U
+    inputs.IER := 0.U
 
+    val isr_clr = WireDefault(0.B)
     val mapping = Seq(
       0x0FC -> Seq(RegField.r(32, output.MID   )), // 0x0FC, Module ID
       0x008 -> Seq(RegField.r(32, output.NSR   )), // 0x008, Network status
@@ -242,51 +274,34 @@ class LiteGEM(busWidthBytes: Int, c: LiteGEMParams)(implicit p: Parameters)
       0x280 -> Seq(RegField  (32, inputs.DCFG1 )), // 0x280, Design configuration register 1
       0x294 -> Seq(RegField  (32, inputs.DCFG6 )), // 0x294, Design configuration register 6
       
-      0x440 -> Seq(RegField  (32, inputs.TBQP1 )), // 0x440, TX Q Base Address - Queue 1
-      0x444 -> Seq(RegField  (32, inputs.TBQP2 )), // 0x444, TX Q Base Address - Queue 2
-      0x448 -> Seq(RegField  (32, inputs.TBQP3 )), // 0x448, TX Q Base Address - Queue 3
-      0x44C -> Seq(RegField  (32, inputs.TBQP4 )), // 0x44C, TX Q Base Address - Queue 4
-      0x450 -> Seq(RegField  (32, inputs.TBQP5 )), // 0x450, TX Q Base Address - Queue 5
-      0x454 -> Seq(RegField  (32, inputs.TBQP6 )), // 0x454, TX Q Base Address - Queue 6
-      0x458 -> Seq(RegField  (32, inputs.TBQP7 )), // 0x458, TX Q Base Address - Queue 7
-      
-      0x480 -> Seq(RegField  (32, inputs.RBQP1 )), // 0x480, RX Q Base Address - Queue 1
-      0x484 -> Seq(RegField  (32, inputs.RBQP2 )), // 0x484, RX Q Base Address - Queue 2
-      0x488 -> Seq(RegField  (32, inputs.RBQP3 )), // 0x488, RX Q Base Address - Queue 3
-      0x48C -> Seq(RegField  (32, inputs.RBQP4 )), // 0x48C, RX Q Base Address - Queue 4
-      0x490 -> Seq(RegField  (32, inputs.RBQP5 )), // 0x490, RX Q Base Address - Queue 5
-      0x494 -> Seq(RegField  (32, inputs.RBQP6 )), // 0x494, RX Q Base Address - Queue 6
-      0x498 -> Seq(RegField  (32, inputs.RBQP7 )), // 0x498, RX Q Base Address - Queue 7
-      
       0x4C8 -> Seq(RegField  (32, inputs.TBQPH )), // 0x4C8, TX Q Base Address
       0x4D4 -> Seq(RegField  (32, inputs.RBQPH )), // 0x4D4, RX Q Base Address
-      
-      0x600 -> Seq(RegField  (32, inputs.IER   )), // 0x600, Interrupt Enable
-      0x604 -> Seq(RegField  (32, inputs.IER1  )), // 0x604, Interrupt Enable
-      0x620 -> Seq(RegField  (32, inputs.IDR   )), // 0x620, Interrupt Disable
-      0x624 -> Seq(RegField  (32, inputs.IDR1  )), // 0x624, Interrupt Disable
-      0x640 -> Seq(RegField  (32, inputs.IMR   )), // 0x640, Interrupt Mask
-      0x644 -> Seq(RegField  (32, inputs.IMR1  ))  // 0x644, Interrupt Mask
+      0x024 -> Seq(RegField.r(32, RegReadFn(ready => {
+        isr_clr := ready; (1.B, output.ISR) 
+      }))), // 0x024, Interrupt Status
+      0x028 -> Seq(RegField  (32, inputs.IER   )), // 0x028, Interrupt Enable
+      0x02C -> Seq(RegField  (32, inputs.IDR   )), // 0x02C, Interrupt Disable
+      0x030 -> Seq(RegField.r(32, output.IMR   ))  // 0x030, Interrupt Mask
     )
     regmap(mapping:_*)
 
+    //--------------------------------------------------------------------------
     val eth = Module(new LiteGEMAdapter(beatBytes, dmaEdge.bundle))
-    interrupts(0) := eth.io.interrupt
     output := eth.io.ctl.out
     eth.io.ctl.in := inputs
 
     when (eth.io.man_en) {
       inputs.MAN := eth.io.man_do
     }
+
     when (eth.io.ncr_en) {
       inputs.NCR := eth.io.ncr_do
     }
 
+    eth.io.gtx_clk      := ethClock
     eth.io.port.phy_id  := Mux(port.phy_id.orR, port.phy_id, "h02000000".U)
     eth.io.port.phy_ad  := port.phy_ad
     eth.io.port.status  := port.status
-
-    eth.io.port.gtx_clk := port.gtx_clk
 
     port.tx_clk         := eth.io.port.tx_clk
     port.tx_en          := eth.io.port.tx_en
@@ -303,20 +318,30 @@ class LiteGEM(busWidthBytes: Int, c: LiteGEMParams)(implicit p: Parameters)
     dma.c <> eth.io.dma_c
     dma.d <> eth.io.dma_d
     dma.e <> eth.io.dma_e
+
+    //--------------------------------------------------------------------------
+    // Interrupts
+    val imr_value = (output.IMR | inputs.IER) & ~inputs.IDR
+    output.IMR := imr_value
+
+    val isr_value = output.IMR & (output.ISR | eth.io.isr_value)
+    output.ISR := Mux(isr_clr, 0.U, isr_value)
+    interrupts(0) := output.ISR =/= isr_value && isr_value =/= 0.U
   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-class LiteGEMCtlIO extends Bundle {
+class LiteGEMControl extends Bundle {
   val out = Output(new LiteGEMOut)
   val in  = Input (new LiteGEMIn)
 }
 
 class LiteGEMAdapter(beatBytes: Int, bundle: TLBundleParameters) extends Module {
   val io = IO(new Bundle {
-    val interrupt = Output(Bool())
+    val isr_value = Output(UInt(32.W))
+    val gtx_clk = Input(Clock())
     val port = new LiteGEMIO
-    val ctl = new LiteGEMCtlIO
+    val ctl = new LiteGEMControl
     val dma_a = Decoupled(new TLBundleA(bundle))
     val dma_b = Flipped(Decoupled(new TLBundleB(bundle)))
     val dma_c = Decoupled(new TLBundleC(bundle))
@@ -331,12 +356,11 @@ class LiteGEMAdapter(beatBytes: Int, bundle: TLBundleParameters) extends Module 
   io.ctl.out         := 0.U.asTypeOf(io.ctl.out)
   io.ctl.out.MID     := 0x20000.U
   io.ctl.out.NSR     := io.port.status ## 0.U(2.W)
-  io.interrupt       := 0.B
  
   //----------------------------------------------------------------------------
   // Management Port (MDIO)
   //----------------------------------------------------------------------------
-  val gem_phy = Module(new LiteGEMPhyMan)
+  val gem_phy = Module(new LiteGEMPhy)
   gem_phy.io.phy_id  := io.port.phy_id
   gem_phy.io.phy_ad  := io.port.phy_ad
   gem_phy.io.status  := io.port.status
@@ -356,11 +380,31 @@ class LiteGEMAdapter(beatBytes: Int, bundle: TLBundleParameters) extends Module 
   io.dma_e <> gem_dma.io.dma_e
 
   //----------------------------------------------------------------------------
+  // Output to NCR
+  //----------------------------------------------------------------------------
+  val txq_ok = WireDefault(0.B)
+  val clr_st = io.ctl.in.NCR(5)
+
+  io.ncr_en := 0.B
+  io.ncr_do := 0.U
+
+  when (clr_st) {
+    io.ncr_do := io.ctl.in.NCR.bitSet(5.U, 0.B) // CLRSTAT 
+    io.ncr_en := 1.B
+  }.elsewhen (txq_ok) {
+    io.ncr_do := io.ctl.in.NCR.bitSet(9.U, 0.B) // Started, TSTART reset to false
+    io.ncr_en := 1.B
+  }
+
+  val rx_cmp = WireDefault(0.B)
+  val tx_ubr = WireDefault(0.B)
+
+  //----------------------------------------------------------------------------
   // TX Channel
   //----------------------------------------------------------------------------
-  withReset(reset.asBool || gem_phy.io.phy_rst) {
+  withReset(reset.asBool || gem_phy.io.phy_rst || clr_st) {
     val gem_txq = Module(new LiteGEMTxQue(beatBytes * 8))
-    gem_txq.io.gtx_clk := io.port.gtx_clk
+    gem_txq.io.gtx_clk := io.gtx_clk
     io.port.tx_clk     := gem_txq.io.tx_clk
     io.port.tx_en      := gem_txq.io.tx_en
     io.port.tx_er      := gem_txq.io.tx_er
@@ -368,43 +412,45 @@ class LiteGEMAdapter(beatBytes: Int, bundle: TLBundleParameters) extends Module 
 
     gem_txq.io.txq_ad  := io.ctl.in.TBQPH ## io.ctl.in.TBQP
     gem_txq.io.txq_en  := io.ctl.in.NCR(3) && io.ctl.in.NCR(9) // TE && TSTART
-    
-    io.ncr_en := 0.B
-    io.ncr_do := 0.U
-    when (gem_txq.io.txq_ok) {
-      io.ncr_do := io.ctl.in.NCR.bitSet(9.U, 0.B) // Started, TSTART reset to false
-      io.ncr_en := 1.B
-    }
+    txq_ok := gem_txq.io.txq_ok
 
     gem_dma.io.dma_do(0) <> gem_txq.io.dma_di
     gem_dma.io.dma_di(0) <> gem_txq.io.dma_do
     gem_dma.io.dma_ad(0) := gem_txq.io.dma_ad
     gem_dma.io.dma_sz(0) := gem_txq.io.dma_sz
     gem_dma.io.dma_we(0) := gem_txq.io.dma_we
+
+    tx_ubr := gem_txq.io.tx_ubr
   }
 
   //----------------------------------------------------------------------------
   // RX Channel
   //----------------------------------------------------------------------------
-  withReset(reset.asBool || gem_phy.io.phy_rst) {
+  withReset(reset.asBool || gem_phy.io.phy_rst || clr_st) {
     val gem_rxq = Module(new LiteGEMRxQue(beatBytes * 8))
     gem_rxq.io.rx_clk := io.port.rx_clk
     gem_rxq.io.rx_dv  := io.port.rx_dv
     gem_rxq.io.rx_er  := io.port.rx_er
     gem_rxq.io.rxd    := io.port.rxd
 
-    gem_rxq.io.rxq_ad  := io.ctl.in.RBQPH ## io.ctl.in.RBQP
-    gem_rxq.io.rxq_en  := io.ctl.in.NCR(2) // RE
+    gem_rxq.io.rxq_ad := io.ctl.in.RBQPH ## io.ctl.in.RBQP
+    gem_rxq.io.rxq_en := io.ctl.in.NCR(2) // RE
+    gem_rxq.io.rxq_of := io.ctl.in.NCFGR(15, 14) // RBOF
     
     gem_dma.io.dma_do(1) <> gem_rxq.io.dma_di
     gem_dma.io.dma_di(1) <> gem_rxq.io.dma_do
     gem_dma.io.dma_ad(1) := gem_rxq.io.dma_ad
     gem_dma.io.dma_sz(1) := gem_rxq.io.dma_sz
     gem_dma.io.dma_we(1) := gem_rxq.io.dma_we
+
+    rx_cmp := gem_rxq.io.rx_cmp
   }
+
+  //----------------------------------------------------------------------------
+  io.isr_value := tx_ubr ## 0.B ## rx_cmp ## 0.B
 }
 
-class LiteGEMPhyMan extends Module {
+class LiteGEMPhy extends Module {
   val io = IO(new Bundle {
     val phy_id = Input(UInt(32.W))
     val phy_ad = Input(UInt(5.W))
@@ -479,9 +525,13 @@ class LiteGEMTxQue(wData: Int, txqNum: Int = 16, daw64: Bool = 0.B) extends Modu
     val dma_sz  = Output(UInt(4.W))
     val dma_do  = PacketIO(UInt(wData.W))
     val dma_di  = Flipped(PacketIO(UInt(wData.W))) 
+
+    val tx_ubr  = Output(Bool())
   })
+  io.tx_ubr := 0.B
 
   val wTxDsc = 16
+  val wDataL = log2Ceil(wData)
 
   io.tx_clk := io.gtx_clk
   io.dma_di.ready := 0.B
@@ -509,8 +559,8 @@ class LiteGEMTxQue(wData: Int, txqNum: Int = 16, daw64: Bool = 0.B) extends Modu
 
   val maxReqL = 64 // TL-D Max Burst Size
   val wReqLen = log2Ceil(maxReqL)
-  val pkt_tot = 0.U(1.W) ## dsc_ctl(11, 0)
-  val pkt_adr = RegInit(0.U(32.W))
+  val pkt_tot = Cat(0.B, dsc_ctl(11, 0)) + dsc_adr(wDataL - 4, 0)
+  val pkt_adr = RegInit(0.U(64.W))
   val pkt_gap = RegInit(0.U(4.W))
 
   val req_ptr = RegInit((maxReqL + 1).U(12.W))
@@ -519,12 +569,6 @@ class LiteGEMTxQue(wData: Int, txqNum: Int = 16, daw64: Bool = 0.B) extends Modu
   val rsp_rem = pkt_tot - rsp_ptr
   val req_eop = req_rem(12)
   val rsp_eop = rsp_rem(12)
-
-  dontTouch(pkt_tot)
-  dontTouch(req_rem)
-  dontTouch(rsp_rem)
-  dontTouch(req_eop)
-  dontTouch(rsp_eop)
 
   switch (state) {
     is (s_idle) {
@@ -547,13 +591,17 @@ class LiteGEMTxQue(wData: Int, txqNum: Int = 16, daw64: Bool = 0.B) extends Modu
     is (s_rcv1) {
       when (io.dma_di.fire && dsc_ptr =/= wDscMem.U) {
         dsc_ptr := dsc_ptr + wData.U
-        dsc_mem := dsc_nxt //dsc_mem | (io.dma_di.data << dsc_ptr)
+        dsc_mem := dsc_nxt
       }
       when (io.dma_di.fire && io.dma_di.last) {
-        pkt_adr := dsc_nxt(31, 0)
+        pkt_adr := dsc_nxt(95, 64) ## dsc_nxt(31, wDataL - 3) ## 0.U((wDataL - 3).W)
         dsc_ptr := 0.U
         txq_ren := 0.B
-        state   := Mux(dsc_nxt(63), s_idle, s_req2) // TX_USED (Bit-31)
+        state   := s_req2 //Mux(dsc_nxt(63), s_idle, s_req2) // TX_USED (Bit-31)
+        when (dsc_nxt(63)) {
+          io.tx_ubr := 1.B
+          state := s_idle
+        }
       }
     }
     is (s_req2) {
@@ -594,7 +642,7 @@ class LiteGEMTxQue(wData: Int, txqNum: Int = 16, daw64: Bool = 0.B) extends Modu
       io.dma_do.data  := dsc_mem >> dsc_ptr
       io.dma_we       := 1.B
       io.dma_sz       := 3.U // 64B
-      io.dma_ad       := io.txq_ad + txq_ptr
+      io.dma_ad       := (io.txq_ad + txq_ptr)
       // DMA Req Done
       when (io.dma_do.ready) {
         dsc_ptr := dsc_ptr + wData.U
@@ -625,7 +673,7 @@ class LiteGEMTxQue(wData: Int, txqNum: Int = 16, daw64: Bool = 0.B) extends Modu
 
   //----------------------------------------------------------------------------
   val din_cnt = RegInit((wData / 8).U(12.W))
-  val din_rem = Cat(0.U(1.W), din_cnt) - dsc_ctl(11, 0)
+  val din_rem = Cat(0.U(1.W), din_cnt) - pkt_tot(11, 0)
   val din_eop = !din_rem(12)
   val din_emp = Mux(din_eop, din_rem, 0.U)
   when (io.dma_di.fire) {
@@ -636,13 +684,13 @@ class LiteGEMTxQue(wData: Int, txqNum: Int = 16, daw64: Bool = 0.B) extends Modu
       din_cnt := (wData / 8).U
     }
   }
-  dontTouch(dsc_ctl)
-  dontTouch(din_eop)
 
   //----------------------------------------------------------------------------
   val fifo = Module(new PacketQueue(PacketIO(UInt(wData.W), emp=true), PacketIO(UInt(8.W), emp=true)))
-  fifo.io.deq_clk   := io.gtx_clk
-  fifo.io.enq_clk   := clock
+
+  fifo.io.enq_shr := dsc_adr
+  fifo.io.deq_clk := io.gtx_clk
+  fifo.io.enq_clk := clock
 
   val eth_eop = rsp_eop && dsc_ctl(15) // TX_LAST
   val eth_emp = RegInit(0.B)
@@ -803,8 +851,6 @@ class LiteGEMTxFCS extends Module {
       crc_din := "hFFFFFFFF".U ^ io.din_txd
     }
   }
-  dontTouch(crc_out)
-  dontTouch(crc_din)
 
   lfsr.io.seed.valid := eth_out || eth_pad
   lfsr.io.increment  := 0.B
@@ -822,7 +868,6 @@ class LiteGEMTxFCS extends Module {
       is (3.U) { io.out_txd := ~crc_out(31, 24) }
     }
   }
-  dontTouch(eth_fcs)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -835,18 +880,23 @@ class LiteGEMRxQue(wData: Int, rxqNum: Int = 32, daw64: Bool = 0.B) extends Modu
 
     val rxq_ad  = Input (UInt(64.W))
     val rxq_en  = Input (Bool())
+    val rxq_of  = Input (UInt(2.W)) // Receive Buffer Offset
 
     val dma_we  = Output(Bool())
     val dma_ad  = Output(UInt(64.W))
     val dma_sz  = Output(UInt(4.W))
     val dma_do  = PacketIO(UInt(wData.W))
     val dma_di  = Flipped(PacketIO(UInt(wData.W))) 
+
+    val rx_cmp = Output(Bool())
   })
+  io.rx_cmp := 0.B
 
   val fifo = Module(new PacketQueue(
     PacketIO(UInt(8.W), UInt(17.W), emp=true),
     PacketIO(UInt(wData.W), UInt(17.W), emp=true)))
 
+  fifo.io.enq_shr := 0.U
   fifo.io.enq_clk := io.rx_clk
   fifo.io.deq_clk := clock
  
@@ -858,6 +908,9 @@ class LiteGEMRxQue(wData: Int, rxqNum: Int = 32, daw64: Bool = 0.B) extends Modu
     fifo.io.enq.data  := 0.U
     fifo.io.enq.last  := 0.B
     fifo.io.enq.empty := 0.U
+
+    val rxq_of_q1 = RegNext(io.rxq_of)
+    val rxq_of_q2 = RegNext(rxq_of_q1)
 
     val buffer = RegInit(0.U(64.W))
     val rx_cnt = RegInit(0.U(16.W))
@@ -881,6 +934,13 @@ class LiteGEMRxQue(wData: Int, rxqNum: Int = 32, daw64: Bool = 0.B) extends Modu
           rx_mod := s_idle
         }.elsewhen (rx_cnt === 3.U) {
           rx_mod := s_data
+        }
+
+        val rxq_of_en = (Cat(1.B, rxq_of_q2) + rx_cnt)
+        when (rxq_of_en(3)) {
+          fifo.io.enq.valid := 1.B
+          fifo.io.enq.last  := 0.B
+          fifo.io.enq.data  := 0.U
         }
       }
       is (s_data) {
@@ -938,15 +998,12 @@ class LiteGEMRxQue(wData: Int, rxqNum: Int = 32, daw64: Bool = 0.B) extends Modu
 
     val maxReqL = 64 // TL-D Max Burst Size
     val wReqLen = log2Ceil(maxReqL)
-    val pkt_adr = RegInit(0.U(32.W))
+    val pkt_adr = RegInit(0.U(64.W))
     val req_ptr = RegInit(0.U(12.W))
     val rsp_ptr = RegInit(0.U(12.W))
     val frg_ptr = RegInit(0.U(12.W))
     val frg_eop = frg_ptr === (maxReqL - wData / 8).U
     val eth_tot = RegInit(0.U(16.W))
-
-    dontTouch(frg_ptr)
-    dontTouch(frg_eop)
 
     io.dma_do.valid := 0.B
     io.dma_do.data  := 0.U
@@ -978,7 +1035,7 @@ class LiteGEMRxQue(wData: Int, rxqNum: Int = 32, daw64: Bool = 0.B) extends Modu
           dsc_mem := dsc_nxt //dsc_mem | (io.dma_di.data << dsc_ptr)
         }
         when (io.dma_di.fire && io.dma_di.last) {
-          pkt_adr := dsc_nxt(31, 0)
+          pkt_adr := dsc_nxt(95, 64) ## dsc_nxt(31, 0)
           dsc_ptr := 0.U
           rxq_ren := 0.B
           state   := Mux(dsc_nxt(0), s_idle, s_req2) // RX_USED
@@ -1035,7 +1092,7 @@ class LiteGEMRxQue(wData: Int, rxqNum: Int = 32, daw64: Bool = 0.B) extends Modu
         when (io.dma_di.fire && io.dma_di.last) {
           when (rsp_ptr + maxReqL.U === req_ptr) {
             val out_adr = Cat(dsc_mem(31,  1), 1.B)
-            val out_ctl = Cat(dsc_mem(63, 44) | 0xC.U, eth_tot(11, 0)) //req_ptr(11, 0)) 
+            val out_ctl = Cat(dsc_mem(63, 44) | 0xC.U, eth_tot(11, 0) - io.rxq_of)
             dsc_mem := Cat(out_ctl, out_adr)
             req_ptr := 0.U
             rsp_ptr := 0.U
@@ -1066,9 +1123,10 @@ class LiteGEMRxQue(wData: Int, rxqNum: Int = 32, daw64: Bool = 0.B) extends Modu
       is (s_rcv3) {
         // DMA Rsp for desc write back
         when (io.dma_di.fire && io.dma_di.last) {
-          rxq_ptr := Mux(dsc_mem(1), 0.U, rxq_ptr + wRxDsc.U) // RX_WRAP
-          rxq_ren := 0.B
-          state   := s_req1
+          rxq_ptr   := Mux(dsc_mem(1), 0.U, rxq_ptr + wRxDsc.U) // RX_WRAP
+          rxq_ren   := 0.B
+          state     := s_req1
+          io.rx_cmp := 1.B
         }
       }
     }

@@ -51,13 +51,13 @@ int main(int argc, char** argv, char** env) {
     connect_ptr(top, dram_ptr);
 
     SimDRAM<32,64,4> dram_sim(1024*1024*2048L, dram_ptr);
-    dram_sim.load_binary("./u-boot.itb", 0x90000000);
+    dram_sim.load_binary("./kernel.itb", 0x90000000);
 
     SimUART uart_sim(0x364); // 0x364 <= 100M / 115200
     uart_sim.txd = &top->uart_0_txd;
     uart_sim.rxd = &top->uart_0_rxd;
 
-    SimQSPI qspi_sim(0x2000000);
+    SimQSPI qspi_sim(0x2000000, 0x0);
     qspi_sim.ie0 = &top->qspi_0_dq_0_ie;
     qspi_sim.ie1 = &top->qspi_0_dq_1_ie;
     qspi_sim.ie2 = &top->qspi_0_dq_2_ie;
@@ -77,7 +77,8 @@ int main(int argc, char** argv, char** env) {
     qspi_sim.cs  = &top->qspi_0_cs_0   ;
     qspi_sim.ck  = &top->qspi_0_sck    ;
     qspi_sim.load_binary("./u-boot.itb", 0x1000000);
-    qspi_sim.load_binary("./env.bin", 0xFC0000);
+    qspi_sim.load_binary("./env.bin", 0x0FC0000);
+    qspi_sim.load_binary("./env.bin", 0x1FC0000);
 
     // Trace
     VerilatedVcdC *tfp = new VerilatedVcdC;

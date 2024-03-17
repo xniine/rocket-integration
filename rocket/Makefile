@@ -18,13 +18,13 @@ config:
 
 opensbi: config
 	ls *.dtb | grep -m1 -v build.dtb | xargs -i ln -sf ../$(notdir $(PWD))/{} ../opensbi/fdt-1.dtb
-	cd ../opensbi && make O=build CROSS_COMPILE=riscv64-unknown-linux-gnu- PLATFORM=generic FW_FDT_PATH=./fdt-1.dtb
+	cd ../opensbi && make O=build CROSS_COMPILE=riscv64-unknown-linux-gnu- PLATFORM=generic FW_FDT_PATH=./fdt-1.dtb PLATFORM_RISCV_ISA=rv64imac_zicsr_zifencei PLATFORM_RISCV_ABI=lp64
 
 u-boot: config
 	ls *.dtb | grep -m1 -v build.dtb | xargs -i ln -sf ../$(notdir $(PWD))/{} ../u-boot/fdt-1.dtb
 	ln -sf ../$(notdir $(PWD))/build.dtb ../u-boot/
 	ln -sf ../opensbi/build/platform/generic/firmware/fw_dynamic.bin ../u-boot/
-	cd ../u-boot && make CROSS_COMPILE=riscv64-unknown-linux-gnu- EXT_DTB=./build.dtb EXTRA_CFLAGS="-march=rv64gc -fPIC"
+	cd ../u-boot && make CROSS_COMPILE=riscv64-unknown-linux-gnu- EXT_DTB=./build.dtb EXTRA_CFLAGS="-march=rv64imac_zicsr_zifencei -mabi=lp64 -fPIC" # -DLOG_DEBUG"
 
 rocket:
 	cd bootrom && make

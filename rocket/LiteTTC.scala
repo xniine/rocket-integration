@@ -164,13 +164,13 @@ class LiteTTC(busWidthBytes: Int, c: LiteTTCParams)(implicit p: Parameters)
       0x50 -> Seq(RegField  (w, inputs(2).match_3  )),
 
       0x54 -> Seq(RegField.r(6, RegReadFn(ready => {
-        inputs(0).interrupt_ac := 1.B; (1.B, output(0).interrupt_st)
+        inputs(0).interrupt_ac := ready; (1.B, output(0).interrupt_st)
       }))),
       0x58 -> Seq(RegField.r(6, RegReadFn(ready => {
-        inputs(1).interrupt_ac := 1.B; (1.B, output(1).interrupt_st)
+        inputs(1).interrupt_ac := ready; (1.B, output(1).interrupt_st)
       }))),
       0x5C -> Seq(RegField.r(6, RegReadFn(ready => {
-        inputs(2).interrupt_ac := 1.B; (1.B, output(2).interrupt_st)
+        inputs(2).interrupt_ac := ready; (1.B, output(2).interrupt_st)
       }))),
 
       0x60 -> Seq(RegField  (6, inputs(0).interrupt_en)),

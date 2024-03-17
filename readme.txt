@@ -112,7 +112,6 @@ make
 make install
 popd
 
-
 #-------------------------------------------------------------------------------
 # OpenSBI
 
@@ -120,7 +119,8 @@ pushd opensbi
 git checkout v1.3.1
 ls ../srcs/*.dtb | grep -v build.dtb -m1 | xargs -i ln -sf {} ./fdt-1.dtb
 make clean
-make O=build CROSS_COMPILE=riscv64-unknown-linux-gnu- PLATFORM=generic FW_FDT_PATH=fdt-1.dtb
+make O=build CROSS_COMPILE=riscv64-unknown-linux-gnu- PLATFORM=generic FW_FDT_PATH=fdt-1.dtb \
+PLATFORM_RISCV_ISA=rv64imac_zicsr_zifencei PLATFORM_RISCV_ABI=lp64
 popd
 
 #-------------------------------------------------------------------------------
@@ -140,7 +140,7 @@ cp ../u-boot.config .config
 # make menuconfig
 
 make CROSS_COMPILE=riscv64-unknown-linux-gnu- EXT_DTB=./build.dtb \
-EXTRA_CFLAGS="-march=rv64gc -fPIC -DLOG_DEBUG -DDEBUG"
+EXTRA_CFLAGS="-march=rv64imac_zicsr_zifencei -mabi=lp64 -fPIC -DLOG_DEBUG"
 
 popd
 
@@ -149,7 +149,7 @@ popd
 
 pushd linux
 make ARCH=riscv CROSS_COMPILE=riscv64-unknown-linux-gnu- menuconfig
-make ARCH=riscv CROSS_COMPILE=riscv64-unknown-linux-gnu- all
+make ARCH=riscv CROSS_COMPILE=riscv64-unknown-linux-gnu- EXTRA_CFLAGS="-march=rv64imac_zicsr_zifencei -mabi=lp64"
 popd
 
 #-------------------------------------------------------------------------------
@@ -174,6 +174,7 @@ make install
 
 #-------------------------------------------------------------------------------
 RootFs
+
 cd _install
 fakeroot
 
