@@ -1,0 +1,27 @@
+[submodule "busybox"]
+  path = busybox
+  url = ssh://github.com/mirror/busybox
+[submodule "opensbi"]
+  path = opensbi
+  url = ssh://github.com/riscv-software-src/opensbi
+[submodule "rocket-chip"]
+  path = rocket-chip
+  url = ssh://github.com/chipsalliance/rocket-chip
+[submodule "rocket-chip-blocks"]
+  path = rocket-chip-blocks
+  url = ssh://github.com/chipsalliance/rocket-chip-blocks
+[submodule "rocket-chip-inclusive-cache"]
+  path = rocket-chip-inclusive-cache
+  url = ssh://github.com/chipsalliance/rocket-chip-inclusive-cache
+[submodule "toolchain/riscv-gnu-toolchain"]
+  path = toolchain/riscv-gnu-toolchain
+  url = ssh://github.com/riscv-collab/riscv-gnu-toolchain
+[submodule "toolchain/riscv-tests"]
+  path = toolchain/riscv-tests
+  url = ssh://github.com/riscv-software-src/riscv-tests
+[submodule "toolchain/verilator"]
+  path = toolchain/verilator
+  url = ssh://github.com/verilator/verilator
+[submodule "u-boot"]
+  path = u-boot
+  url = ssh://github.com/u-boot/u-boot

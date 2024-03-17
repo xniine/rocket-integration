@@ -41,7 +41,6 @@ tar -xzf sbt-1.9.7.tgz
 # Firtool
 
 wget https://github.com/llvm/circt/releases/download/firtool-1.30.0/circt-bin-ubuntu-20.04.tar.gz
-tar -xzf circt-bin-ubuntu-20.04.tar.gz
 mkdir -p firtool
 tar -C firtool -xzf circt-bin-ubuntu-20.04.tar.gz
 
@@ -148,6 +147,8 @@ popd
 # Linux
 
 pushd linux
+wget https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.2.tar.gz
+tar -xzf linux-6.2.tar.gz
 make ARCH=riscv CROSS_COMPILE=riscv64-unknown-linux-gnu- menuconfig
 make ARCH=riscv CROSS_COMPILE=riscv64-unknown-linux-gnu- EXTRA_CFLAGS="-march=rv64imac_zicsr_zifencei -mabi=lp64"
 popd
