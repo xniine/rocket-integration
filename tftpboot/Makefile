@@ -19,4 +19,5 @@ clean:
 	rm -Rf _install initrd.gz
 	rm -Rf kernel.itb
 	rm -Rf boot.scr.uimg
+	rm -Rf ramdisk.image
 
