@@ -25,3 +25,6 @@
 [submodule "u-boot"]
   path = u-boot
   url = ssh://github.com/u-boot/u-boot
+[submodule "mku3pa"]
+	path = mku3pa
+	url = https://github.com/xniine/mku3pa
