@@ -1,8 +1,10 @@
+
  cp shadow/rocket-chip-inclusive-cache.build.sbt rocket-chip-inclusive-cache/build.sbt                                                
- cd shadow/rocket-chip-blocks; patch -p1 < ../shadow/rocket-chip-blocks.patch; cd -                                                          
  cp shadow/rocket-chip-blocks.build.sbt rocket-chip-blocks/build.sbt                                                                  
 
+ cd rocket-chip-blocks; patch -p1 < ../shadow/rocket-chip-blocks.patch; cd -                                                          
  cd u-boot; patch -p1 < ../shadow/u-boot.patch; cd -                                                                                  
+
  cp shadow/busybox.config busybox/.config                                                                                             
  cp shadow/u-boot.config u-boot/.config                                                                                               
  cp shadow/linux.config linux/.config                                                                                                 
