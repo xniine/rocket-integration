@@ -4,13 +4,13 @@
 all: sbt mill firtool verilator riscv-gnu-toolchain riscv-tests 
 
 riscv-gnu-toolchain:
-	cd riscv-gnu-toolchain; ./configure --prefix=$(PWD)/../riscv --enable-multilib && make && make linux
+	cd riscv-gnu-toolchain; ./configure --prefix=$(PWD)/riscv --enable-multilib && make && make linux
 
 riscv-tests:
-	cd riscv-tests; ./configure --prefix=$(PWD)/../riscv/riscv64-unknown-elf && make install
+	cd riscv-tests; ./configure --prefix=$(PWD)/riscv/riscv64-unknown-elf && make install
 
 verilator:
-	cd verilator; autoconf; ./configure --prefix=$(PWD) && make install
+	cd verilator; autoconf; ./configure --prefix=$(PWD)/verilator && make install
 
 firtool:
 	test -e circt-bin-ubuntu-20.04.tar.gz || wget https://github.com/llvm/circt/releases/download/firtool-1.30.0/circt-bin-ubuntu-20.04.tar.gz
