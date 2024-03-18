@@ -2,14 +2,15 @@
 
 Running in ubuntu 20.04
 
-- rocket - scala modules to compile the rocket-chip into verilog file
-- rocket-chip - rocket-chip main code
-- rocket-chip-blocks - rocket-chip peripheral devices developed by sifive
-- test - source code to run rocket chip with verilator and simulated ddr and qspi
-- u-boot - boot loader to embeded in bootROM and (later) start the linux
-- opensbi - firmware required to boot linux
-- busybox - source code for busybox ramdisk as rootfs
-- tftpboot - tftp root folder to transfer the linux fit image (for u-boot netowrk boot)
+> - rocket - scala modules to compile the rocket-chip into verilog file
+> - rocket-chip - rocket-chip main code
+> - rocket-chip-blocks - rocket-chip peripheral devices developed by sifive
+> - test - source code to run rocket chip with verilator and simulated ddr and qspi
+> - u-boot - boot loader to embeded in bootROM and (in later phase) start the linux
+> - opensbi - firmware required to boot linux
+> - busybox - source code for busybox ramdisk as rootfs
+> - tftpboot - tftp root folder to transfer the linux fit image (for u-boot netowrk boot)
+> - mku3pa - vivado project for rocket-chip running in fpga
 
 ### To Build:
   ```
@@ -60,7 +61,9 @@ Running in ubuntu 20.04
   #### Start dnsmasq
   dnsmasq -d -C dhcp.conf -i enxa0cec8f6bbb8 # <- replace with the ifname of your own nic 
   ```
-  The verilog file RocketMed.sv along with the device-tree will be generated in rocket folder.
 
+  The verilog file RocketMed.sv along with the device-tree will be generated in rocket folder.
   Copy and import these file into your vivado project.
+  
+  ![](/doc/RocketMed-Resource-Usage.png?raw=true)
 
