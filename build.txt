@@ -3,8 +3,8 @@
 cd toolchain; make all
 
 #### Prepare linux kernel
-test -e ./linux-6.2.tar.gz || wget https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.2.tar.gz
-test -e ./linux || (tar -xzf linux-6.2.tar.gz && mv linux-6.2 linux)
+test -e ./linux-6.5.tar.gz || wget https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.5.tar.gz
+test -e ./linux || (tar -xzf linux-6.5.tar.gz && mv linux-6.5 linux)
 
 #### Prepare ENV variables & patch the source code
 test -e ./linux/.config || bash patch.txt
