@@ -1,0 +1,365 @@
+- d00dfeed
+OpenSBI v1.3
+   ____                    _____ ____ _____
+  / __ \                  / ____|  _ \_   _|
+ | |  | |_ __   ___ _ __ | (___ | |_) || |
+ | |  | | '_ \ / _ \ '_ \ \___ \|  _ < | |
+ | |__| | |_) |  __/ | | |____) | |_) || |_
+  \____/| .__/ \___|_| |_|_____/|___
+/_____|
+        | |
+        |_|
+Platform Name             : freechips,rocketchip-riscv64
+Platform Features         : medeleg
+Platform HART Count       : 1
+Platform IPI Device       : aclint-mswi
+Platform Timer Device     : aclint-mtimer @ 1000000Hz
+Platform Console Device   : sifive_uart
+Platform HSM Device       : ---
+Platform PMU Device       : ---
+Platform Reboot Device    : ---
+Platform Shutdown Device  : ---
+Platform Suspend Device   : ---
+Platform CPPC Device      : ---
+Firmware Base             : 0x80000000
+Firmware Size             : 322 KB
+Firmware RW Offset        : 0x40000
+Firmware RW Size          : 66 KB
+Firmware Heap Offset      : 0x48000
+Firmware Heap Size        : 34 KB (total), 2 KB (reserved), 9 KB (used), 22 KB (free)
+Firmware Scratch Size     : 4096 B (total), 760 B (used), 3336 B (free)
+Runtime SBI Version       : 1.0
+Domain0 Name              : root
+Domain0 Boot HART         : 0
+Domain0 HARTs             : 0*
+Domain0 Region00          : 0x0000000002000000-0x000000000200ffff M: (I,R,W) S/U: ()
+Domain0 Region01          : 0x0000000080040000-0x000000008005ffff M: (R,W) S/U: ()
+Domain0 Region02          : 0x0000000080000000-0x000000008003ffff M: (R,X) S/U: ()
+Domain0 Region03          : 0x0000000000000000-0xffffffffffffffff M: (R,W,X) S/U: (R,W,X)
+Domain0 Next Address      : 0x0000000081200000
+Domain0 Next Arg1         : 0x0000000085100000
+Domain0 Next Mode         : S-mode
+Domain0 SysReset          : yes
+Domain0 SysSuspend        : yes
+Boot HART ID              : 0
+Boot HART Domain          : root
+Boot HART Priv Version    : v1.12
+Boot HART Base ISA        : rv64imacx
+Boot HART ISA Extensions  : none
+Boot HART PMP Count       : 8
+Boot HART PMP Granularity : 4
+Boot HART PMP Address Bits: 30
+Boot HART MHPM Count      : 0
+Boot HART MIDELEG         : 0x0000000000000222
+Boot HART MEDELEG         : 0x000000000000b109
+U-Boot 2023.10-dirty (Mar 19 2024 - 01:08:29 +0800)
+CPU:   rv64imafdczicsr_zifencei_zihpm_xrocket
+Model: freechips,rocketchip-riscv64
+DRAM:  2 GiB
+Core:  17 devices, 13 uclasses, devicetree: board
+MMC:   
+Loading Environment from SPIFlash... SF: Detected is25wp256 with page size 256 Bytes, erase size 4 KiB, total 32 MiB
+In:    serial,usbkbd
+Out:   serial,vidconsole
+Err:   serial,vidconsole
+No working controllers found
+Net:   eth0: eth@10014000
+Hit any key to stop autoboot:  2 
+Device 0: unknown device
+scanning bus for devices...
+Device 0: unknown device
+starting USB...
+No working controllers found
+eth@10014000: PHY present at 0
+eth@10014000: link up, 1000Mbps full-duplex (lpa: 0x3800)
+BOOTP broadcast 1
+DHCP client bound to address 10.0.0.10 (8 ms)
+Using eth@10014000 device
+TFTP from server 10.0.0.1; our IP address is 10.0.0.10
+Filename 'boot.scr.uimg'.
+Load address: 0x8c100000
+Loading: *
+	 776.4 KiB/s
+done
+Bytes transferred = 1590 (636 hex)
+## Executing script at 8c100000
+===== Setting Environment =====
+===== Loading Kernel =====
+eth@10014000: PHY present at 0
+eth@10014000: link up, 1000Mbps full-duplex (lpa: 0x3800)
+Using eth@10014000 device
+TFTP from server 10.0.0.1; our IP address is 10.0.0.10
+Filename '/kernel.itb'.
+Load address: 0x90000000
+Loading: *
+#################################################################
+	 #################################################################
+	 #################################################################
+	 #################################################################
+	 #################################################################
+	 #################################################################
+	 #################################################################
+	 #################################################################
+	 #################################################################
+	 #################################################################
+	 #################################################################
+	 #################################################################
+	 #################################################################
+	 #################################################################
+	 #################################################################
+	 #################################################################
+	 #################################################################
+	 #################################################################
+	 #################################################################
+	 #################################################################
+	 #################################################################
+	 #################################################################
+	 #####
+	 2.8 MiB/s
+done
+Bytes transferred = 21059729 (1415891 hex)
+90000000: edfe0dd0 91584101 38000000 7c544101  .....AX....8.AT|
+90000010: 28000000 11000000 10000000 00000000  ...(............
+90000020: 65000000 44544101 00000000 00000000  ...e.ATD........
+90000030: 00000000 00000000 01000000 00000000  ................
+90000040: 03000000 04000000 55000000 2a5df965  ...........Ue.]*
+90000050: 03000000 12000000 00000000 746f6f42  ............Boot
+90000060: 6e694c20 4b207875 656e7265 0000006c   Linux Kernel...
+90000070: 01000000 67616d69 00007365 01000000  ....images......
+90000080: 6e72656b 312d6c65 00000000 03000000  kernel-1........
+90000090: 09000000 00000000 6e72654b 312d6c65  ........Kernel-1
+900000a0: 00000000 03000000 00ea2e01 0c000000  ................
+900000b0: 106f5a4d 00010820 00200000 00000000  MZo. ..... .....
+900000c0: 01361000 00000000 00000000 00000000  ..6.............
+900000d0: 00000002 00000000 00000000 00000000  ................
+900000e0: 43534952 00000056 05435352 00000040  RISCV...RSC.@...
+900000f0: 00004550 00025064 00000000 00000000  PE..dP..........
+## Checking Image at 90000000 ...
+   FIT image found
+   FIT description: Boot Linux Kernel
+    Image 0 (kernel-1)
+     Description:  Kernel-1
+     Type:         Kernel Image
+     Compression:  uncompressed
+     Data Start:   0x900000b0
+     Data Size:    19851776 Bytes = 18.9 MiB
+     Architecture: RISC-V
+     OS:           Linux
+     Load Address: 0x94000000
+     Entry Point:  0x94000000
+     Hash algo:    crc32
+     Hash value:   08c757e4
+    Image 1 (ramdisk-1)
+     Description:  Ramdisk-1
+     Type:         RAMDisk Image
+     Compression:  uncompressed
+     Data Start:   0x912eeb8c
+     Data Size:    1202198 Bytes = 1.1 MiB
+     Architecture: RISC-V
+     OS:           Linux
+     Load Address: 0x96000000
+     Entry Point:  0x96000000
+     Hash algo:    crc32
+     Hash value:   dfd3fc2a
+    Image 2 (fdt-1)
+     Description:  FDT-1
+     Type:         Flat Device Tree
+     Compression:  uncompressed
+     Data Start:   0x91414478
+     Data Size:    3777 Bytes = 3.7 KiB
+     Architecture: RISC-V
+     Load Address: 0x95f00000
+     Hash algo:    crc32
+     Hash value:   1307e131
+    Default Configuration: 'config-1'
+    Configuration 0 (config-1)
+     Description:  Linux Config-1 (Default)
+     Kernel:       kernel-1
+     Init Ramdisk: ramdisk-1
+     FDT:          fdt-1
+## Checking hash(es) for FIT Image at 90000000 ...
+   Hash(es) for Image 0 (kernel-1): crc32+ 
+   Hash(es) for Image 1 (ramdisk-1): crc32+ 
+   Hash(es) for Image 2 (fdt-1): crc32+ 
+===== DONE! =====
+## Loading kernel from FIT Image at 90000000 ...
+   Using 'config-1' configuration
+   Trying 'kernel-1' kernel subimage
+     Description:  Kernel-1
+     Type:         Kernel Image
+     Compression:  uncompressed
+     Data Start:   0x900000b0
+     Data Size:    19851776 Bytes = 18.9 MiB
+     Architecture: RISC-V
+     OS:           Linux
+     Load Address: 0x94000000
+     Entry Point:  0x94000000
+     Hash algo:    crc32
+     Hash value:   08c757e4
+   Verifying Hash Integrity ... crc32+ OK
+## Loading ramdisk from FIT Image at 90000000 ...
+   Using 'config-1' configuration
+   Trying 'ramdisk-1' ramdisk subimage
+     Description:  Ramdisk-1
+     Type:         RAMDisk Image
+     Compression:  uncompressed
+     Data Start:   0x912eeb8c
+     Data Size:    1202198 Bytes = 1.1 MiB
+     Architecture: RISC-V
+     OS:           Linux
+     Load Address: 0x96000000
+     Entry Point:  0x96000000
+     Hash algo:    crc32
+     Hash value:   dfd3fc2a
+   Verifying Hash Integrity ... crc32+ OK
+   Loading ramdisk from 0x912eeb8c to 0x96000000
+## Loading fdt from FIT Image at 90000000 ...
+   Using 'config-1' configuration
+   Trying 'fdt-1' fdt subimage
+     Description:  FDT-1
+     Type:         Flat Device Tree
+     Compression:  uncompressed
+     Data Start:   0x91414478
+     Data Size:    3777 Bytes = 3.7 KiB
+     Architecture: RISC-V
+     Load Address: 0x95f00000
+     Hash algo:    crc32
+     Hash value:   1307e131
+   Verifying Hash Integrity ... crc32+ OK
+   Loading fdt from 0x91414478 to 0x95f00000
+   Booting using the fdt blob at 0x95f00000
+Working FDT set to 95f00000
+   Loading Kernel Image
+   Using Device Tree in place at 0000000095f00000, end 0000000095f03ec0
+Working FDT set to 95f00000
+Starting kernel ...
+[    0.000000] Linux version 6.5.0 (ubuntu@ubuntu) (riscv64-unknown-linux-gnu-gcc (gc891d8dc23e) 13.2.0, GNU ld (GNU Binutils) 2.41) #1 Tue Mar 19 16:36:55 CST 2024
+[    0.000000] Machine model: freechips,rocketchip-riscv64
+[    0.000000] SBI specification v1.0 detected
+[    0.000000] SBI implementation ID=0x1 Version=0x10003
+[    0.000000] SBI TIME extension detected
+[    0.000000] SBI IPI extension detected
+[    0.000000] SBI RFENCE extension detected
+[    0.000000] efi: UEFI not found.
+[    0.000000] OF: reserved mem: 0x0000000080000000..0x000000008003ffff (256 KiB) nomap non-reusable mmode_resv1@80000000
+[    0.000000] OF: reserved mem: 0x0000000080040000..0x000000008005ffff (128 KiB) nomap non-reusable mmode_resv0@80040000
+[    0.000000] Zone ranges:
+[    0.000000]   DMA32    [mem 0x0000000080000000-0x00000000ffffffff]
+[    0.000000]   Normal   empty
+[    0.000000] Movable zone start for each node
+[    0.000000] Early memory node ranges
+[    0.000000]   node   0: [mem 0x0000000080000000-0x000000008005ffff]
+[    0.000000]   node   0: [mem 0x0000000080060000-0x00000000ffffffff]
+[    0.000000] Initmem setup node 0 [mem 0x0000000080000000-0x00000000ffffffff]
+[    0.000000] riscv: base ISA extensions acdfim
+[    0.000000] riscv: ELF capabilities acdfim
+[    0.000000] pcpu-alloc: s0 r0 d32768 u32768 alloc=1*32768
+[    0.000000] pcpu-alloc: [0] 0 
+[    0.000000] Kernel command line: root=/dev/ram0 rw ramdisk_size=10240 rootfstype=ext4 clocksource=ttc_clocksource loglevel=8 console=ttyS0,115200 console=ttySIF0,115200
+[    0.000000] Dentry cache hash table entries: 262144 (order: 9, 2097152 bytes, linear)
+[    0.000000] Inode-cache hash table entries: 131072 (order: 8, 1048576 bytes, linear)
+[    0.000000] Built 1 zonelists, mobility grouping on.  Total pages: 516096
+[    0.000000] mem auto-init: stack:all(zero), heap alloc:off, heap free:off
+[    0.000000] Virtual kernel memory layout:
+[    0.000000]       fixmap : 0xffffffc6fea00000 - 0xffffffc6ff000000   (6144 kB)
+[    0.000000]       pci io : 0xffffffc6ff000000 - 0xffffffc700000000   (  16 MB)
+[    0.000000]      vmemmap : 0xffffffc700000000 - 0xffffffc800000000   (4096 MB)
+[    0.000000]      vmalloc : 0xffffffc800000000 - 0xffffffd800000000   (  64 GB)
+[    0.000000]      modules : 0xffffffff01361000 - 0xffffffff80000000   (2028 MB)
+[    0.000000]       lowmem : 0xffffffd800000000 - 0xffffffd880000000   (2048 MB)
+[    0.000000]       kernel : 0xffffffff80000000 - 0xffffffffffffffff   (2047 MB)
+[    0.000000] Memory: 2022732K/2097152K availablet, 454K bss, 74420K reserved, 0K cma-reserved)
+[    0.000000] SLUB: HWalign=64, Order=0-3, MinObjects=0, CPUs=1, Nodes=1
+[    0.000000] NR_IRQS: 64, nr_irqs: 64, preallocated irqs: 0
+[    0.000000] riscv-intc: 64 local interrupts mapped
+[    0.000000] plic: interrupt-controller@c000000: mapped 8 interrupts with 1 handlers for 2 contexts.
+[    0.000000] clocksource: riscv_clocksource: mask: 0xffffffffffffffff max_cycles: 0x1d854df40, max_idle_ns: 3526361616960 ns
+[    0.000039] sched_clock: 64 bits at er frequency.. 2.00 BogoMIPS (lpj=4000)
+[    0.004697] pid_max: default: 32768 minimum: 301
+[    0.006778] LSM: initializing lsm=capability,integrity
+[    0.010654] Mount-cache hash table entries: 4096 (order: 3, 32768 bytes, linear)
+[    0.011309] Mountpoint-cache hash table entries: 4096 (order: 3, 32768 bytes, linear)
+[    0.052431] RCU Tasks Trace: Setting shift to 0 and lim to 1 rcu_task_cb_adjust=1.
+[    0.055512] riscv: ELF compat mode unsupported
+[    0.055711] ASID allocator disabled (0 bitsns
+[    0.134762] futex hash table entries: 256 (order: 1, 12288 bytes, linear)
+[    0.139296] pinctrl core: initialized pinctrl subsystem
+[    0.173387] NET: Registered PF_NETLINK/PF_ROUTE protocol family
+[    0.178854] audit: initializing netlink subsys (disabled)
+[    0.194018] cpuidle: using governor menu
+[    0.263005] audit: type=2000 audit(0.168:1): state=initialized audit_enabled=0 res=1
+[    0.279165] HugeTLB: registered 2.00 MiB page size, pre-allocated 0 pages
+[    0.279332] HugeTLB: 28 Kface driver usbfs
+[    0.323312] usbcore: registered new interface driver hub
+[    0.324353] usbcore: registered new device driver usb
+[    0.353977] vgaarb: loaded
+[    0.357530] clocksource: Switched to clocksource riscv_clocksource
+[    0.686250] NET: Registered PF_INET protocol family
+[    0.694757] IP idents hash table entries: 32768 (order: 6, 262144 bytes, linear)
+[    0.778139] tcp_listen_portaddr_hash hash table entries: 1024 (order: 3, 32768 bytes, linear)
+[    0.779315] Table-perturb hash84 (order: 8, 1048576 bytes, linear)
+[    0.850181] TCP: Hash tables configured (established 16384 bind 16384)
+[    0.852813] UDP hash table entries: 1024 (order: 4, 98304 bytes, linear)
+[    0.857105] UDP-Lite hash table entries: 1024 (order: 4, 98304 bytes, linear)
+[    0.864681] NET: Registered PF_UNIX/PF_LOCAL protocol family
+[    0.877049] RPC: Registered named UNIX socket transport module.
+[    0.877210] RPC: Registered udp transport module.
+[    0.877355] RPC: Registered tcp transport module.
+0.909109] Trying to unpack rootfs image as initramfs...
+[    0.921136] rootfs image is not initramfs (no cpio magic); looks like an initrd
+[    0.931059] workingset: timestamp_bits=46 max_order=19 bucket_order=0
+[    0.965176] NFS: Registering the id_resolver key type
+[    0.966498] Key type id_resolver registered
+[    0.966671] Key type id_legacy registered
+[    0.967438] nfs4filelayout_init: NFSv4 File Layout Driver Registering...
+[    0.967652] nfs4flexfilelayout_init: NFSv4 Flexfile Layout Driverr version 0.4 loaded (major 247)
+[    0.987919] io scheduler mq-deadline registered
+[    0.988127] io scheduler kyber registered
+[    1.205163] Freeing initrd memory: 1172K
+[    3.082181] Serial: 8250/16550 driver, 4 ports, IRQ sharing disabled
+[    3.155060] 10010000.serial: ttySIF0 at MMIO 0x10010000 (irq = 2, base_baud = 6250000) is a SiFive UART v0
+[    3.155439] printk: console [ttySIF0] enabled
+[    4.103170] brd: module loaded
+[    4.299709] loop: module loaded
+[    4.318955] sifive_spi 1001f000.spi: mapped; irq=3, cs=1
+[    4.794211] macb 10014000.eth eth0: Cadence GEM rev 0x00020000 at 0x10014000 irq 4 (02:00:11:22:33:49)
+[    4.806727] e1000e: Intel(R) PRO/1000 Network Driver
+[    4.811605] e1000e: Copyright(c) 1999 - 2015 Intel Corporation.
+[    4.833434] usbcore: registered new interface driver uas
+[    4.840138] usbcore: registered new interface driver usb-storage
+[    4.852125] mousedev: PS/2 mouse device common for all mice
+[    4.875689] sdhci: Secure Digital Host Controller Interface driver
+[    4.882123] sdhci: Copyright(c) Pierre Ossman
+[    4.887309] sdhci-pltfm: SDHCI platform and OF driver helper
+[    4.901018] clocksource: ttc_clocksource: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 39142714154086 ns
+[    4.911491] clocksource: Switched to clocksource ttc_clocksource
+[    4.917686] ttc #0 at (____ptrval____), irq=6
+[    4.926597] usbcore: registered new interface driver usbhid
+[    4.931711] usbhid: USB HID core driver
+[    4.939234] riscv-pmu-sbi: SBI PMU extension is available
+[    4.944574] riscv-pmu-sbi: 16 firmware and 2 hardware counters
+[    4.949975] riscv-pmu-sbi: Perf sampling/filtering is not supported as sscof extension is not available
+[    4.969574] NET: Registered PF_INET6 protocol family
+[    5.002390] Segment Routing with IPv6
+[    5.007476] In-situ OAM (IOAM) with IPv6
+[    5.012557] sit: IPv6, IPv4 and MPLS over IPv4 tunneling driver
+[    5.033156] NET: Registered PF_PACKET protocol family
+[    5.039997] 9pnet: Installing 9P2000 support
+[    5.045536] Key type dns_resolver registered
+[    5.051286] start plist test
+[    5.290400] end plist test
+[    5.872195] debug_vm_pgtable: [debug_vm_pgtable         ]: Validating architecture page table helpers
+[    5.902132] clk: Disabling unused clocks
+[    5.911323] RAMDISK: gzip image found at block 0
+[   10.759166] EXT4-fs (ram0): mounted filesystem f650fb12-c8d9-4c30-afcf-144e1c0693a3 r/w without journal. Quota mode: disabled.
+[   10.771814] VFS: Mounted root (ext4 filesystem) on device 1:0.
+[   10.788293] devtmpfs: mounted
+[   10.828965] Freeing unused kernel image (initmem) memory: 2136K
+[   10.835172] Run /sbin/init as init process
+[   10.838797]   with arguments:
+[   10.841759]     /sbin/init
+[   10.844451]   with environment:
+[   10.847585]     HOME=/
+[   10.849933]     TERM=linux
+Please press Enter to activate this console. 
+~ # 
